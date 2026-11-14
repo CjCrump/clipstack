@@ -1,0 +1,88 @@
+// Properties panel for the selected text or speed segment.
+// Rebuilt only when the selection changes so typing never loses focus.
+
+import { state, emit, subscribe, getSelected } from './state.js';
+
+const RATES = [1.5, 2, 3, 4, 8];
+
+let root;
+let shownKey; // undefined so the first render always builds
+
+export function initPanel(el) {
+  root = el;
+  subscribe(render);
+  render();
+}
+
+function render() {
+  const item = getSelected();
+  const key = item ? `${state.selected.type}:${item.id}` : null;
+  if (key !== shownKey) {
+    shownKey = key;
+    build(item);
+  }
+  sync(item);
+}
+
+function build(item) {
+  if (!item) {
+    root.innerHTML = '<p class="muted">Select a text or speed bar to edit it. Drag text in the preview to move it, and use its corner handle to resize.</p>';
+    return;
+  }
+  if (state.selected.type === 'text') {
+    root.innerHTML = `
+      <label>Text <textarea data-k="text" rows="2"></textarea></label>
+      <label>Size <input data-k="size" type="number" min="30" max="400" step="2"></label>
+      <div class="row">
+        <label>Start (s) <input data-k="start" type="number" step="0.05" min="0"></label>
+        <label>End (s) <input data-k="end" type="number" step="0.05" min="0"></label>
+      </div>
+      <label>Animation
+        <select data-k="anim"><option value="pop">Pop</option><option value="none">None</option></select>
+      </label>
+      <button class="btn danger" data-act="delete">Delete text</button>`;
+  } else {
+    root.innerHTML = `
+      <label>Speed <select data-k="rate">${RATES.map((r) => `<option value="${r}">${r}x</option>`).join('')}</select></label>
+      <div class="row">
+        <label>Start (s) <input data-k="start" type="number" step="0.05" min="0"></label>
+        <label>End (s) <input data-k="end" type="number" step="0.05" min="0"></label>
+      </div>
+      <button class="btn danger" data-act="delete">Delete speed</button>`;
+  }
+
+  root.querySelectorAll('[data-k]').forEach((input) => {
+    input.addEventListener('input', () => {
+      const it = getSelected();
+      if (!it) return;
+      const k = input.dataset.k;
+      const numeric = k !== 'text' && k !== 'anim';
+      const v = numeric ? parseFloat(input.value) : input.value;
+      if (numeric && Number.isNaN(v)) return;
+      it[k] = v;
+      if (it.end <= it.start) it.end = it.start + 0.1;
+      emit();
+    });
+  });
+  root.querySelector('[data-act="delete"]').addEventListener('click', deleteSelected);
+}
+
+function sync(item) {
+  if (!item) return;
+  root.querySelectorAll('[data-k]').forEach((input) => {
+    if (input === document.activeElement) return;
+    const v = item[input.dataset.k];
+    input.value = typeof v === 'number' && input.dataset.k !== 'rate' && input.dataset.k !== 'size'
+      ? v.toFixed(2)
+      : v;
+  });
+}
+
+export function deleteSelected() {
+  const s = state.selected;
+  if (!s) return;
+  const key = s.type === 'text' ? 'texts' : 'speeds';
+  state[key] = state[key].filter((i) => i.id !== s.id);
+  state.selected = null;
+  emit();
+}

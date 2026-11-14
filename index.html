@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Clip Stacker</title>
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  <header class="toolbar">
+    <strong class="brand">Clip Stacker</strong>
+    <label class="btn">Load clip<input type="file" id="fileInput" accept="video/*" hidden></label>
+    <button id="addText" class="btn" disabled>+ Text</button>
+    <button id="addSpeed" class="btn" disabled>+ Speed</button>
+    <span class="spacer"></span>
+    <label class="field">Font file <input id="fontPath" type="text" spellcheck="false"></label>
+    <button id="exportFfmpeg" class="btn" disabled>ffmpeg command</button>
+    <button id="exportBrowser" class="btn primary" disabled>Export MP4</button>
+  </header>
+
+  <main class="workspace">
+    <section class="pane source-pane">
+      <div class="pane-title">Source <span id="splitReadout" class="muted"></span></div>
+      <div id="sourceWrap" class="source-wrap">
+        <div id="stage" class="stage">
+          <video id="video" playsinline preload="auto"></video>
+          <div id="overlay" class="overlay"></div>
+        </div>
+        <p id="emptyMsg" class="empty">Load a 16:9 clip to start</p>
+      </div>
+    </section>
+
+    <section class="pane preview-pane">
+      <div class="pane-title">Preview <span class="muted">1080×1920</span></div>
+      <div class="preview-wrap"><canvas id="preview" width="1080" height="1920"></canvas></div>
+    </section>
+
+    <aside class="pane panel-pane">
+      <div class="pane-title">Properties</div>
+      <div id="panel" class="panel"></div>
+    </aside>
+  </main>
+
+  <footer class="timeline-pane">
+    <div class="transport">
+      <button id="playBtn" class="btn" disabled>Play</button>
+      <span id="timeLabel" class="mono">0.00 / 0.00</span>
+      <span class="muted">Space play/pause · Delete removes selected</span>
+    </div>
+    <div id="timeline" class="timeline"></div>
+  </footer>
+
+  <div id="modal" class="modal" hidden>
+    <div class="modal-card">
+      <h3 id="modalTitle"></h3>
+      <div id="modalBody"></div>
+      <div class="modal-actions"><button id="modalClose" class="btn">Close</button></div>
+    </div>
+  </div>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
