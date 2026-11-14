@@ -1,170 +1,118 @@
-// Timeline: a ruler, one speed lane, and one lane per text layer.
-// Drag a bar to move it, drag its edges to stretch or shrink it.
-// Click or drag on the ruler / empty track to scrub.
+// Two linked crop boxes drawn over the source video.
+// Corners scale a box (split stays the same). Top/bottom edges change the
+// split, and the other box re-sizes to match its new output slot.
 
-import { state, emit, subscribe, clamp } from './state.js';
+import { state, emit, subscribe, OUT_W, OUT_H, box, boxH, clampBoxes, clamp } from './state.js';
 
-const MIN_LEN = 0.1;
+let stage, overlay, wrap, readout;
+let scale = 1; // display px per source px
+const els = {};
 
-let root, video, playhead;
-let structureKey = '';
-const bars = new Map(); // "type:id" -> element
-
-export function initTimeline(el, v) {
-  root = el;
-  video = v;
+export function initCropBoxes(opts) {
+  ({ stage, overlay, wrap, readout } = opts);
+  els.A = makeBox('A', 'Top');
+  els.B = makeBox('B', 'Bottom');
   subscribe(render);
-  new ResizeObserver(() => { structureKey = ''; render(); }).observe(root);
+  new ResizeObserver(layout).observe(wrap);
 }
 
-const pxPerSec = () => {
-  const track = root.querySelector('.tl-track');
-  return track && state.duration ? track.clientWidth / state.duration : 1;
-};
-
-export function updatePlayhead(t) {
-  if (playhead) playhead.style.left = `${t * pxPerSec()}px`;
-}
-
-function render() {
-  const key = `${state.duration}|${state.speeds.map((s) => s.id)}|${state.texts.map((t) => t.id)}`;
-  if (key !== structureKey) {
-    structureKey = key;
-    build();
-  }
-  layoutBars();
-}
-
-function build() {
-  root.innerHTML = '';
-  bars.clear();
+export function layout() {
   if (!state.duration) return;
-
-  root.appendChild(rulerRow());
-  root.appendChild(lane('Speed', state.speeds, 'speed'));
-  state.texts.forEach((t, i) => root.appendChild(lane(`Text ${i + 1}`, [t], 'text')));
-
-  const layer = document.createElement('div');
-  layer.className = 'tl-playhead-layer';
-  playhead = document.createElement('div');
-  playhead.className = 'tl-playhead';
-  layer.appendChild(playhead);
-  root.appendChild(layer);
-}
-
-function row(labelText, cls = '') {
-  const r = document.createElement('div');
-  r.className = `tl-row ${cls}`;
-  const label = document.createElement('div');
-  label.className = 'tl-label';
-  label.textContent = labelText;
-  const track = document.createElement('div');
-  track.className = 'tl-track';
-  track.addEventListener('pointerdown', scrub);
-  r.append(label, track);
-  return { r, track };
-}
-
-function rulerRow() {
-  const { r, track } = row('', 'ruler');
-  const step = state.duration > 60 ? 5 : 1;
-  for (let s = 0; s <= state.duration; s += step) {
-    const tick = document.createElement('div');
-    tick.className = 'tl-tick';
-    tick.style.left = `${(s / state.duration) * 100}%`;
-    tick.textContent = `${s}s`;
-    track.appendChild(tick);
+  const maxW = wrap.clientWidth - 24;
+  const maxH = wrap.clientHeight - 24;
+  let w = maxW;
+  let h = (w * state.srcH) / state.srcW;
+  if (h > maxH) {
+    h = maxH;
+    w = (h * state.srcW) / state.srcH;
   }
-  return r;
+  stage.style.width = `${w}px`;
+  stage.style.height = `${h}px`;
+  scale = w / state.srcW;
+  render();
 }
 
-function lane(labelText, items, type) {
-  const { r, track } = row(labelText);
-  for (const item of items) {
-    const bar = document.createElement('div');
-    bar.className = `tl-bar ${type}`;
-    bar.innerHTML = '<span class="tl-name"></span><div class="tl-edge l"></div><div class="tl-edge r"></div>';
-    bar.addEventListener('pointerdown', (e) => dragBar(e, type, item, bar));
-    track.appendChild(bar);
-    bars.set(`${type}:${item.id}`, bar);
-  }
-  return r;
+function makeBox(k, label) {
+  const el = document.createElement('div');
+  el.className = `cropbox ${k.toLowerCase()}`;
+  el.innerHTML = `<span class="tag">${label}</span>` +
+    ['nw', 'ne', 'sw', 'se', 'n', 's'].map((h) => `<div class="handle" data-h="${h}"></div>`).join('');
+  el.addEventListener('pointerdown', (e) => startDrag(e, k));
+  overlay.appendChild(el);
+  return el;
 }
 
-function layoutBars() {
-  const pps = pxPerSec();
-  const sel = state.selected ? `${state.selected.type}:${state.selected.id}` : '';
-  for (const [key, bar] of bars) {
-    const [type, id] = key.split(':');
-    const list = type === 'text' ? state.texts : state.speeds;
-    const item = list.find((i) => i.id === Number(id));
-    if (!item) continue;
-    bar.style.left = `${item.start * pps}px`;
-    bar.style.width = `${(item.end - item.start) * pps}px`;
-    bar.querySelector('.tl-name').textContent = type === 'text' ? item.text : `${item.rate}x`;
-    bar.classList.toggle('selected', key === sel);
-  }
-}
-
-function scrub(e) {
-  if (e.target.closest('.tl-bar')) return;
-  const track = e.currentTarget;
-  const seek = (ev) => {
-    const r = track.getBoundingClientRect();
-    video.currentTime = clamp((ev.clientX - r.left) / pxPerSec(), 0, state.duration);
-  };
-  seek(e);
-  track.setPointerCapture(e.pointerId);
-  const up = () => {
-    track.removeEventListener('pointermove', seek);
-    track.removeEventListener('pointerup', up);
-  };
-  track.addEventListener('pointermove', seek);
-  track.addEventListener('pointerup', up);
-}
-
-// Speed segments can't overlap, so find the free space around one.
-function speedBounds(item) {
-  let lo = 0;
-  let hi = state.duration;
-  for (const s of state.speeds) {
-    if (s === item) continue;
-    if (s.end <= item.start) lo = Math.max(lo, s.end);
-    if (s.start >= item.end) hi = Math.min(hi, s.start);
-  }
-  return { lo, hi };
-}
-
-function dragBar(e, type, item, bar) {
+function startDrag(e, k) {
   e.preventDefault();
-  e.stopPropagation();
-  const mode = e.target.classList.contains('l') ? 'l' : e.target.classList.contains('r') ? 'r' : 'move';
-  state.selected = { type, id: item.id };
-  emit();
-
-  const px = e.clientX;
-  const s0 = item.start;
-  const e0 = item.end;
-  const { lo, hi } = type === 'speed' ? speedBounds(item) : { lo: 0, hi: state.duration };
-  bar.setPointerCapture(e.pointerId);
+  const el = els[k];
+  const handle = e.target.dataset.h || 'move';
+  const other = k === 'A' ? 'B' : 'A';
+  const b = box(k);
+  const start = {
+    px: e.clientX,
+    py: e.clientY,
+    x: b.x,
+    y: b.y,
+    w: b.w,
+    h: boxH(k),
+    otherCenterY: box(other).y + boxH(other) / 2,
+  };
+  el.setPointerCapture(e.pointerId);
 
   const move = (ev) => {
-    const dt = (ev.clientX - px) / pxPerSec();
-    if (mode === 'move') {
-      const len = e0 - s0;
-      item.start = clamp(s0 + dt, lo, hi - len);
-      item.end = item.start + len;
-    } else if (mode === 'l') {
-      item.start = clamp(s0 + dt, lo, e0 - MIN_LEN);
-    } else {
-      item.end = clamp(e0 + dt, s0 + MIN_LEN, hi);
-    }
+    const dx = (ev.clientX - start.px) / scale;
+    const dy = (ev.clientY - start.py) / scale;
+    applyDrag(k, other, handle, start, dx, dy);
+    clampBoxes();
     emit();
   };
   const up = () => {
-    bar.removeEventListener('pointermove', move);
-    bar.removeEventListener('pointerup', up);
+    el.removeEventListener('pointermove', move);
+    el.removeEventListener('pointerup', up);
   };
-  bar.addEventListener('pointermove', move);
-  bar.addEventListener('pointerup', up);
+  el.addEventListener('pointermove', move);
+  el.addEventListener('pointerup', up);
+}
+
+function applyDrag(k, other, handle, s, dx, dy) {
+  const b = box(k);
+
+  if (handle === 'move') {
+    b.x = s.x + dx;
+    b.y = s.y + dy;
+    return;
+  }
+
+  if (handle.length === 2) {
+    // corner: uniform scale, opposite corner stays put
+    const w = Math.max(80, handle.includes('e') ? s.w + dx : s.w - dx);
+    const h = (w * s.h) / s.w;
+    b.w = w;
+    b.x = handle.includes('w') ? s.x + s.w - w : s.x;
+    b.y = handle.includes('n') ? s.y + s.h - h : s.y;
+    return;
+  }
+
+  // top/bottom edge: height changes, which changes the split
+  const newH = Math.max(40, handle === 's' ? s.h + dy : s.h - dy);
+  const slot = (newH * OUT_W) / b.w; // output px this box now needs
+  const split = k === 'A' ? slot / OUT_H : 1 - slot / OUT_H;
+  state.split = clamp(split, 0.15, 0.85);
+  if (handle === 'n') b.y = s.y + s.h - boxH(k);
+
+  // other box keeps its width and centre, height follows the new slot
+  box(other).y = s.otherCenterY - boxH(other) / 2;
+}
+
+function render() {
+  for (const k of ['A', 'B']) {
+    const b = box(k);
+    const s = els[k].style;
+    s.left = `${b.x * scale}px`;
+    s.top = `${b.y * scale}px`;
+    s.width = `${b.w * scale}px`;
+    s.height = `${boxH(k) * scale}px`;
+  }
+  const top = Math.round(state.split * 100);
+  readout.textContent = `top ${top}% / bottom ${100 - top}%`;
 }

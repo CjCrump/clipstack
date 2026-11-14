@@ -1,155 +1,84 @@
-// Entry point: wires the modules to the page and runs the render loop.
+// Builds an ffmpeg filter script + command that renders exactly what the preview shows.
+// The filter lives in its own file so the command works the same in PowerShell, cmd and bash.
 
-import { state, emit, uid, clampBoxes, rateAt, OUT_W } from './state.js';
-import { initCropBoxes, layout } from './cropBoxes.js';
-import { initPreview, drawPreview } from './preview.js';
-import { initTimeline, updatePlayhead } from './timeline.js';
-import { initPanel, deleteSelected } from './panel.js';
-import { ensureAudio } from './audio.js';
-import { exportBrowser } from './exportBrowser.js';
-import { buildFilter, buildCommand } from './exportFfmpeg.js';
+import { state, OUT_W, OUT_H, box, boxH, slotH, srcToOut, buildSegments, fadeTime } from './state.js';
 
-const $ = (id) => document.getElementById(id);
-const video = $('video');
-const canvas = $('preview');
-const FONT_KEY = 'clipStacker.fontPath';
+const even = (n) => Math.max(2, Math.round(n / 2) * 2);
+const f = (n) => Number(n.toFixed(3));
 
-// default crops are tuned for a 1920x1080 Halo capture with the cam bottom-left
-const DEFAULT_A = { x: 542, y: 41, w: 835 };
-const DEFAULT_B = { x: 36, y: 730, w: 562 };
-
-initCropBoxes({ stage: $('stage'), overlay: $('overlay'), wrap: $('sourceWrap'), readout: $('splitReadout') });
-initPreview(canvas, video);
-initTimeline($('timeline'), video);
-initPanel($('panel'));
-
-// ---- font path setting (only used by the ffmpeg command) ----
-const fontInput = $('fontPath');
-fontInput.value = localStorage.getItem(FONT_KEY) || 'C:/Windows/Fonts/Bangers-Regular.ttf';
-fontInput.addEventListener('change', () => localStorage.setItem(FONT_KEY, fontInput.value.trim()));
-document.fonts.load('100px Bangers');
-
-// ---- loading a clip ----
-$('fileInput').addEventListener('change', (e) => {
-  const file = e.target.files[0];
-  if (!file) return;
-  state.fileName = file.name;
-  video.src = URL.createObjectURL(file);
-});
-
-video.addEventListener('loadedmetadata', () => {
-  const sx = video.videoWidth / 1920;
-  const sy = video.videoHeight / 1080;
-  Object.assign(state, {
-    srcW: video.videoWidth,
-    srcH: video.videoHeight,
-    duration: video.duration,
-    texts: [],
-    speeds: [],
-    selected: null,
-  });
-  state.boxA = { x: DEFAULT_A.x * sx, y: DEFAULT_A.y * sy, w: DEFAULT_A.w * sx };
-  state.boxB = { x: DEFAULT_B.x * sx, y: DEFAULT_B.y * sy, w: DEFAULT_B.w * sx };
-  clampBoxes();
-  $('stage').classList.add('ready');
-  $('emptyMsg').hidden = true;
-  ['addText', 'addSpeed', 'exportFfmpeg', 'exportBrowser', 'playBtn'].forEach((id) => { $(id).disabled = false; });
-  layout();
-  emit();
-});
-
-// ---- adding items at the playhead ----
-$('addText').addEventListener('click', () => {
-  const t = video.currentTime;
-  const item = {
-    id: uid(), text: 'SPANKY', x: OUT_W / 2, y: 440, size: 160,
-    start: t, end: Math.min(state.duration, t + 1.4), anim: 'pop',
-  };
-  state.texts.push(item);
-  state.selected = { type: 'text', id: item.id };
-  emit();
-});
-
-$('addSpeed').addEventListener('click', () => {
-  const t = video.currentTime;
-  if (rateAt(t) !== 1) return; // already inside a speed segment
-  const next = state.speeds.filter((s) => s.start > t).reduce((m, s) => Math.min(m, s.start), state.duration);
-  const end = Math.min(next, t + 3);
-  if (end - t < 0.1) return;
-  const item = { id: uid(), start: t, end, rate: 4 };
-  state.speeds.push(item);
-  state.selected = { type: 'speed', id: item.id };
-  emit();
-});
-
-// ---- playback ----
-function togglePlay() {
-  ensureAudio(video);
-  if (video.paused) video.play();
-  else video.pause();
-}
-$('playBtn').addEventListener('click', togglePlay);
-video.addEventListener('play', () => { $('playBtn').textContent = 'Pause'; });
-video.addEventListener('pause', () => { $('playBtn').textContent = 'Play'; });
-
-document.addEventListener('keydown', (e) => {
-  if (e.target.closest('input, textarea, select') || !state.duration || state.exporting) return;
-  if (e.code === 'Space') {
-    e.preventDefault();
-    togglePlay();
-  } else if (e.key === 'Delete' || e.key === 'Backspace') {
-    deleteSelected();
+// atempo only takes 0.5..2 per instance, so chain it for bigger speedups.
+function atempo(rate) {
+  const parts = [];
+  let r = rate;
+  while (r > 2) {
+    parts.push('atempo=2');
+    r /= 2;
   }
-});
-
-// ---- modal ----
-const modal = $('modal');
-function openModal(title, html, closable = true) {
-  $('modalTitle').textContent = title;
-  $('modalBody').innerHTML = html;
-  $('modalClose').hidden = !closable;
-  modal.hidden = false;
+  if (r !== 1) parts.push(`atempo=${f(r)}`);
+  return parts.length ? `,${parts.join(',')}` : '';
 }
-$('modalClose').addEventListener('click', () => { modal.hidden = true; });
 
-// ---- exports ----
-$('exportBrowser').addEventListener('click', async () => {
-  openModal('Exporting…', '<p class="muted">Keep this tab in front while it plays through.</p><div class="progress"><div id="bar"></div></div>', false);
-  const ext = await exportBrowser({
-    video,
-    canvas,
-    onProgress: (p) => { $('bar').style.width = `${Math.min(100, p * 100)}%`; },
+function cropFor(k) {
+  const b = box(k);
+  return `crop=${even(b.w)}:${even(boxH(k))}:${Math.round(b.x)}:${Math.round(b.y)}`;
+}
+
+function escapeFontPath(p) {
+  return p.replace(/\\/g, '/').replace(/:/g, '\\:');
+}
+
+function drawtext(tx, fontPath) {
+  const T = f(srcToOut(tx.start));
+  const D = f(srcToOut(tx.end) - srcToOut(tx.start));
+  const S = tx.size;
+  const fade = f(fadeTime(D));
+  const lt = `(t-${T})`;
+
+  const size = tx.anim === 'pop'
+    ? `if(lt(${lt}\\,0.12)\\,${f(S * 0.375)}+${lt}/0.12*${f(S * 0.8125)}\\,` +
+      `if(lt(${lt}\\,0.22)\\,${f(S * 1.1875)}-(${lt}-0.12)/0.1*${f(S * 0.1875)}\\,${S}))`
+    : `${S}`;
+  const alpha = `if(lt(${lt}\\,${f(D - fade)})\\,1\\,(${f(T + D)}-t)/${fade})`;
+
+  // Apostrophes would close the quoted value, so swap in a typographic one.
+  // The trailing space stops slanted fonts (Bangers) clipping their last letter.
+  const text = tx.text.replace(/'/g, '’').replace(/\\/g, '').replace(/\n/g, ' ');
+
+  return `drawtext=fontfile='${escapeFontPath(fontPath)}':expansion=none:text='${text} '` +
+    `:fontsize='${size}':fontcolor=white:borderw=${Math.max(1, Math.round(S / 16))}:bordercolor=black` +
+    `:x=${f(tx.x)}-tw/2+th*0.12:y=${f(tx.y)}-th/2:alpha='${alpha}'` +
+    `:enable='between(t\\,${T}\\,${f(T + D)})'`;
+}
+
+export function buildFilter(fontPath) {
+  const segs = buildSegments();
+  const lines = [];
+
+  segs.forEach((s, i) => {
+    const last = i === segs.length - 1;
+    const range = last ? `start=${f(s.start)}` : `start=${f(s.start)}:end=${f(s.end)}`;
+    const pts = s.rate === 1 ? 'PTS-STARTPTS' : `(PTS-STARTPTS)/${s.rate}`;
+    lines.push(`[0:v]trim=${range},setpts=${pts}[v${i}]`);
+    lines.push(`[0:a]atrim=${range},asetpts=PTS-STARTPTS${atempo(s.rate)}[a${i}]`);
   });
-  openModal('Done', `<p>Your ${ext.toUpperCase()} downloaded.${ext === 'webm' ? ' This browser can\'t record MP4, so it saved WebM instead.' : ''}</p>`);
-});
 
-$('exportFfmpeg').addEventListener('click', () => {
-  const fontPath = fontInput.value.trim();
-  const blob = new Blob([buildFilter(fontPath)], { type: 'text/plain' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = 'filter.txt';
-  a.click();
+  const ins = segs.map((_, i) => `[v${i}][a${i}]`).join('');
+  lines.push(`${ins}concat=n=${segs.length}:v=1:a=1[cv][a]`);
 
-  const cmd = buildCommand();
-  openModal('ffmpeg command', `
-    <p>Downloaded <b>filter.txt</b>. Put it in the same folder as <b>${state.fileName}</b>, open a terminal there, and run:</p>
-    <pre id="cmd"></pre>
-    <p class="muted">Needs ffmpeg 7 or newer. Font file: ${fontPath}</p>
-    <button class="btn" id="copyCmd">Copy command</button>`);
-  $('cmd').textContent = cmd;
-  $('copyCmd').addEventListener('click', () => navigator.clipboard.writeText(cmd));
-});
+  const topH = even(slotH('A'));
+  lines.push('[cv]fps=30,split[sa][sb]');
+  lines.push(`[sa]${cropFor('A')},scale=${OUT_W}:${topH},setsar=1[top]`);
+  lines.push(`[sb]${cropFor('B')},scale=${OUT_W}:${OUT_H - topH},setsar=1[bot]`);
 
-// ---- render loop ----
-const timeLabel = $('timeLabel');
-function frame() {
-  const t = video.currentTime;
-  const r = rateAt(t);
-  if (video.playbackRate !== r) video.playbackRate = r;
-  drawPreview();
-  updatePlayhead(t);
-  timeLabel.textContent = `${t.toFixed(2)} / ${(state.duration || 0).toFixed(2)}`;
-  requestAnimationFrame(frame);
+  const texts = [...state.texts].sort((a, b) => a.start - b.start);
+  const chain = texts.map((t) => drawtext(t, fontPath));
+  lines.push(`[top][bot]vstack${chain.length ? ',' + chain.join(',') : ''}[v]`);
+
+  return lines.join(';\n') + '\n';
 }
-requestAnimationFrame(frame);
+
+export function buildCommand(filterFile = 'filter.txt') {
+  const out = `${state.fileName.replace(/\.[^.]+$/, '')}_vertical.mp4`;
+  return `ffmpeg -y -i "${state.fileName}" -/filter_complex ${filterFile} -map "[v]" -map "[a]" ` +
+    `-c:v libx264 -preset slow -crf 18 -c:a aac -b:a 160k -movflags +faststart "${out}"`;
+}
