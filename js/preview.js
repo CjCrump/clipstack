@@ -42,6 +42,41 @@ export function drawPreview() {
     const tx = state.texts.find((i) => i.id === sel);
     if (tx) drawSelection(tx);
   }
+
+  if (!state.exporting) drawGuides();
+}
+
+// ---- snap guides for text: frame centre line + centre of each section ----
+const SNAP = 24; // canvas px
+const activeGuides = { x: null, y: null };
+
+function snapTargetsY() {
+  const topH = slotH('A');
+  return [topH / 2, topH + (OUT_H - topH) / 2];
+}
+
+function snapText(tx) {
+  activeGuides.x = null;
+  activeGuides.y = null;
+  if (Math.abs(tx.x - OUT_W / 2) < SNAP) {
+    tx.x = OUT_W / 2;
+    activeGuides.x = OUT_W / 2;
+  }
+  for (const y of snapTargetsY()) {
+    if (Math.abs(tx.y - y) < SNAP) {
+      tx.y = y;
+      activeGuides.y = y;
+    }
+  }
+}
+
+function drawGuides() {
+  if (activeGuides.x === null && activeGuides.y === null) return;
+  ctx.save();
+  ctx.fillStyle = '#ff3ec8';
+  if (activeGuides.x !== null) ctx.fillRect(activeGuides.x - 2, 0, 4, OUT_H);
+  if (activeGuides.y !== null) ctx.fillRect(0, activeGuides.y - 2, OUT_W, 4);
+  ctx.restore();
 }
 
 function textVisual(tx, t) {
@@ -142,6 +177,7 @@ function onPointerDown(e) {
     if (mode === 'move') {
       tx.x = clamp(start.x + q.x - p.x, 0, OUT_W);
       tx.y = clamp(start.y + q.y - p.y, 0, OUT_H);
+      snapText(tx);
     } else {
       const d = Math.hypot(q.x - tx.x, q.y - tx.y);
       tx.size = Math.round(clamp((start.size * d) / start.dist, 30, 400));
@@ -149,6 +185,8 @@ function onPointerDown(e) {
     emit();
   };
   const up = () => {
+    activeGuides.x = null;
+    activeGuides.y = null;
     canvas.removeEventListener('pointermove', move);
     canvas.removeEventListener('pointerup', up);
   };

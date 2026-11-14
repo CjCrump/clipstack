@@ -133,6 +133,14 @@ input, textarea, select {
 .handle[data-h="se"] { right: -7px; bottom: -7px; cursor: nwse-resize; }
 .handle[data-h="n"] { left: calc(50% - 14px); top: -5px; width: 28px; height: 8px; cursor: ns-resize; }
 .handle[data-h="s"] { left: calc(50% - 14px); bottom: -5px; width: 28px; height: 8px; cursor: ns-resize; }
+.handle[data-h="e"] { top: calc(50% - 14px); right: -5px; width: 8px; height: 28px; cursor: ew-resize; }
+.handle[data-h="w"] { top: calc(50% - 14px); left: -5px; width: 8px; height: 28px; cursor: ew-resize; }
+
+/* snap guides */
+.guide { position: absolute; background: #ff3ec8; pointer-events: none; }
+.guide[hidden] { display: none; }
+.guide-x { top: 0; bottom: 0; left: calc(50% - 1px); width: 2px; }
+.guide-y { left: 0; right: 0; top: calc(50% - 1px); height: 2px; }
 
 /* preview */
 .preview-wrap {

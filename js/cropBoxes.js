@@ -1,17 +1,27 @@
 // Two linked crop boxes drawn over the source video.
-// Corners scale a box (split stays the same). Top/bottom edges change the
-// split, and the other box re-sizes to match its new output slot.
+// Any handle reshapes a box freely; its new shape sets the split and the other
+// box re-shapes to fill the rest of the 9:16 frame. Shift + corner scales
+// without changing the split. Moving a box snaps its centre to the video's centre.
 
 import { state, emit, subscribe, OUT_W, OUT_H, box, boxH, clampBoxes, clamp } from './state.js';
+
+const SNAP_PX = 8; // snap distance in screen pixels
 
 let stage, overlay, wrap, readout;
 let scale = 1; // display px per source px
 const els = {};
+const guides = { x: false, y: false };
+const guideEls = {};
 
 export function initCropBoxes(opts) {
   ({ stage, overlay, wrap, readout } = opts);
   els.A = makeBox('A', 'Top');
   els.B = makeBox('B', 'Bottom');
+  for (const axis of ['x', 'y']) {
+    guideEls[axis] = document.createElement('div');
+    guideEls[axis].className = `guide guide-${axis}`;
+    overlay.appendChild(guideEls[axis]);
+  }
   subscribe(render);
   new ResizeObserver(layout).observe(wrap);
 }
@@ -36,7 +46,7 @@ function makeBox(k, label) {
   const el = document.createElement('div');
   el.className = `cropbox ${k.toLowerCase()}`;
   el.innerHTML = `<span class="tag">${label}</span>` +
-    ['nw', 'ne', 'sw', 'se', 'n', 's'].map((h) => `<div class="handle" data-h="${h}"></div>`).join('');
+    ['nw', 'ne', 'sw', 'se', 'n', 's', 'e', 'w'].map((h) => `<div class="handle" data-h="${h}"></div>`).join('');
   el.addEventListener('pointerdown', (e) => startDrag(e, k));
   overlay.appendChild(el);
   return el;
@@ -62,11 +72,13 @@ function startDrag(e, k) {
   const move = (ev) => {
     const dx = (ev.clientX - start.px) / scale;
     const dy = (ev.clientY - start.py) / scale;
-    applyDrag(k, other, handle, start, dx, dy);
+    applyDrag(k, other, handle, start, dx, dy, ev.shiftKey);
     clampBoxes();
     emit();
   };
   const up = () => {
+    guides.x = guides.y = false;
+    renderGuides();
     el.removeEventListener('pointermove', move);
     el.removeEventListener('pointerup', up);
   };
@@ -74,17 +86,19 @@ function startDrag(e, k) {
   el.addEventListener('pointerup', up);
 }
 
-function applyDrag(k, other, handle, s, dx, dy) {
+function applyDrag(k, other, handle, s, dx, dy, shift) {
   const b = box(k);
+  guides.x = guides.y = false;
 
   if (handle === 'move') {
     b.x = s.x + dx;
     b.y = s.y + dy;
+    snapToCenter(k);
     return;
   }
 
-  if (handle.length === 2) {
-    // corner: uniform scale, opposite corner stays put
+  // Shift + corner: uniform scale, split stays the same
+  if (shift && handle.length === 2) {
     const w = Math.max(80, handle.includes('e') ? s.w + dx : s.w - dx);
     const h = (w * s.h) / s.w;
     b.w = w;
@@ -93,15 +107,44 @@ function applyDrag(k, other, handle, s, dx, dy) {
     return;
   }
 
-  // top/bottom edge: height changes, which changes the split
-  const newH = Math.max(40, handle === 's' ? s.h + dy : s.h - dy);
-  const slot = (newH * OUT_W) / b.w; // output px this box now needs
+  // Free resize: any handle can change width and/or height.
+  // The new shape sets the split, and the other box re-shapes to fill the rest.
+  let w = s.w;
+  let h = s.h;
+  if (handle.includes('e')) w = s.w + dx;
+  if (handle.includes('w')) w = s.w - dx;
+  if (handle.includes('s')) h = s.h + dy;
+  if (handle.includes('n')) h = s.h - dy;
+  w = Math.max(80, w);
+  h = Math.max(40, h);
+
+  const slot = (h * OUT_W) / w; // output px this box now needs
   const split = k === 'A' ? slot / OUT_H : 1 - slot / OUT_H;
   state.split = clamp(split, 0.15, 0.85);
-  if (handle === 'n') b.y = s.y + s.h - boxH(k);
+  b.w = w;
+
+  // keep the edge opposite the handle anchored
+  b.x = handle.includes('w') ? s.x + s.w - w : s.x;
+  b.y = handle.includes('n') ? s.y + s.h - boxH(k) : s.y;
 
   // other box keeps its width and centre, height follows the new slot
   box(other).y = s.otherCenterY - boxH(other) / 2;
+}
+
+// Snap a moving box's centre to the source video's centre lines.
+function snapToCenter(k) {
+  const b = box(k);
+  const tol = SNAP_PX / scale;
+  const cx = b.x + b.w / 2;
+  const cy = b.y + boxH(k) / 2;
+  if (Math.abs(cx - state.srcW / 2) < tol) {
+    b.x = state.srcW / 2 - b.w / 2;
+    guides.x = true;
+  }
+  if (Math.abs(cy - state.srcH / 2) < tol) {
+    b.y = state.srcH / 2 - boxH(k) / 2;
+    guides.y = true;
+  }
 }
 
 function render() {
@@ -113,6 +156,12 @@ function render() {
     s.width = `${b.w * scale}px`;
     s.height = `${boxH(k) * scale}px`;
   }
+  renderGuides();
   const top = Math.round(state.split * 100);
   readout.textContent = `top ${top}% / bottom ${100 - top}%`;
+}
+
+function renderGuides() {
+  guideEls.x.hidden = !guides.x;
+  guideEls.y.hidden = !guides.y;
 }
