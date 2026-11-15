@@ -19,6 +19,7 @@ export function initPreview(c, v) {
   video = v;
   ctx = canvas.getContext('2d');
   canvas.addEventListener('pointerdown', onPointerDown);
+  video.addEventListener('emptied', () => { haveHeld = false; }); // a new clip: don't show the old one's frame
   canvas.addEventListener('keydown', onKey);
 }
 
@@ -44,11 +45,30 @@ function onKey(e) {
   emit();
 }
 
+// The last good frame. While the video is seeking (scrubbing, dragging the flag)
+// it has no frame for a moment; drawing from this copy instead of painting black
+// stops the vertical preview flashing.
+const held = document.createElement('canvas');
+const heldCtx = held.getContext('2d');
+let haveHeld = false;
+
+function holdFrame() {
+  if (held.width !== video.videoWidth || held.height !== video.videoHeight) {
+    held.width = video.videoWidth;
+    held.height = video.videoHeight;
+  }
+  heldCtx.drawImage(video, 0, 0);
+  haveHeld = true;
+}
+
 const drawFromVideo = (c, ...args) => c.drawImage(video, ...args);
+const drawFromHeld = (c, ...args) => c.drawImage(held, ...args);
 
 export function drawPreview() {
   const t = video.currentTime;
-  drawComposite(ctx, video.readyState >= 2 ? drawFromVideo : null, t);
+  const ready = video.readyState >= 2 && !video.seeking && video.videoWidth > 0;
+  if (ready) holdFrame();
+  drawComposite(ctx, ready ? drawFromVideo : haveHeld ? drawFromHeld : null, t);
 
   // editor-only overlays: ghosts of selected items that aren't showing right now,
   // a thin outline on each selected item, the group's box, and the main one's handle
