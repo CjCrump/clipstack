@@ -16,6 +16,7 @@
     <button id="exportFfmpeg" class="btn" disabled>ffmpeg command</button>
     <button id="exportBrowser" class="btn primary" disabled>Export MP4</button>
   </header>
+  <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
 
   <main class="workspace">
     <section class="pane source-pane">
@@ -25,7 +26,7 @@
           <video id="video" playsinline preload="auto"></video>
           <div id="overlay" class="overlay"></div>
         </div>
-        <p id="emptyMsg" class="empty">Load a 16:9 clip to start</p>
+        <p id="emptyMsg" class="empty">Load or drop a 16:9 clip to start</p>
       </div>
     </section>
 

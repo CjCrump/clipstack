@@ -32,8 +32,8 @@ html, body {
 }
 
 body {
-  display: grid;
-  grid-template-rows: auto 1fr auto;
+  display: flex;
+  flex-direction: column;
   height: 100vh;
 }
 
@@ -77,8 +77,21 @@ input, textarea, select {
   font: inherit;
 }
 
+/* notice bar (errors and info) */
+.notice {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+  background: #1f2a3d;
+}
+.notice.error { background: #3d1f24; color: #ffb3b3; }
+.notice[hidden] { display: none; }
+
+/* drag-and-drop highlight */
+body.dragging .source-wrap { outline: 3px dashed var(--accent); outline-offset: -8px; }
+
 /* workspace */
 .workspace {
+  flex: 1;
   display: grid;
   grid-template-columns: minmax(0, 1fr) clamp(240px, 26vw, 420px) 260px;
   min-height: 0;

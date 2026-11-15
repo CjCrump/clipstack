@@ -7,6 +7,7 @@ import { initTimeline, updatePlayhead } from './timeline.js';
 import { initPanel, deleteSelected } from './panel.js';
 import { exportMp4, ExportError } from './exportMp4.js';
 import { buildFilter, buildCommand } from './exportFfmpeg.js';
+import { initLoader, canExportInBrowser } from './loader.js';
 
 const $ = (id) => document.getElementById(id);
 const video = $('video');
@@ -26,16 +27,32 @@ initPanel($('panel'));
 // Bangers ships with the app (fonts/), so every visitor gets the same text.
 const fontReady = document.fonts.load('100px Bangers');
 
+// ---- notices (errors and info) ----
+const notice = $('notice');
+function showNotice(message, kind = 'info') {
+  notice.hidden = !message;
+  notice.textContent = message || '';
+  notice.className = `notice ${kind}`;
+}
+
+if (!canExportInBrowser()) {
+  showNotice('Export MP4 needs Firefox 130+, Chrome or Edge 94+, or Safari 26+. You can still edit here and use the ffmpeg command.');
+}
+
 // ---- loading a clip ----
-$('fileInput').addEventListener('change', (e) => {
-  const file = e.target.files[0];
-  if (!file) return;
-  state.fileName = file.name;
-  sourceFile = file;
-  video.src = URL.createObjectURL(file);
+initLoader({
+  video,
+  input: $('fileInput'),
+  dropZone: document.body,
+  notice: showNotice,
+  onFile: (file) => {
+    state.fileName = file.name;
+    sourceFile = file;
+  },
 });
 
 video.addEventListener('loadedmetadata', () => {
+  if (!video.videoWidth) return; // loader shows the error
   const sx = video.videoWidth / 1920;
   const sy = video.videoHeight / 1080;
   Object.assign(state, {
@@ -51,7 +68,8 @@ video.addEventListener('loadedmetadata', () => {
   clampBoxes();
   $('stage').classList.add('ready');
   $('emptyMsg').hidden = true;
-  ['addText', 'addSpeed', 'exportFfmpeg', 'exportBrowser', 'playBtn'].forEach((id) => { $(id).disabled = false; });
+  ['addText', 'addSpeed', 'exportFfmpeg', 'playBtn'].forEach((id) => { $(id).disabled = false; });
+  $('exportBrowser').disabled = !canExportInBrowser();
   layout();
   emit();
 });
