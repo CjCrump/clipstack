@@ -210,7 +210,7 @@ body.dragging .source-wrap { outline: 3px dashed var(--accent); outline-offset: 
 .panel textarea { resize: vertical; min-height: 54px; }
 
 /* timeline */
-.timeline-pane { border-top: 1px solid var(--line); background: var(--pane); }
+.timeline-pane { position: relative; border-top: 1px solid var(--line); background: var(--pane); }
 .transport { display: flex; align-items: center; gap: 12px; padding: 6px 12px; }
 .timeline {
   position: relative;
@@ -247,29 +247,37 @@ body.dragging .source-wrap { outline: 3px dashed var(--accent); outline-offset: 
 .tl-window[hidden] { display: none; }
 .tl-window:active { cursor: grabbing; }
 .tl-window:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
-.tl-knob { /* the playhead on the whole-video bar: same sharp flag */
-  position: absolute;
-  top: -2px;
-  width: 14px;
-  height: 20px;
-  margin-left: -7px;
-  background: #ff3b3b;
-  clip-path: polygon(0 0, 100% 0, 100% 58%, 50% 100%, 0 58%);
-  pointer-events: none; /* the bar handles the drag */
-}
-/* the playhead's flag: a sharp marker whose tip sits exactly on the red line */
-.tl-head {
+.tl-knob { /* where the playhead is in the whole video: a hairline, not a handle */
   position: absolute;
   top: 0;
-  width: 14px;
-  height: 17px;
-  margin-left: -6px; /* tip centred on the 2px line */
+  bottom: 0;
+  width: 2px;
+  margin-left: -1px;
   background: #ff3b3b;
-  clip-path: polygon(0 0, 100% 0, 100% 58%, 50% 100%, 0 58%);
-  cursor: ew-resize;
-  z-index: 5;
+  pointer-events: none;
 }
-.tl-head:hover { background: #ff6262; }
+/* the playhead: a pin-point flag over the bar, its stem running into the red line */
+.tl-flag {
+  position: absolute;
+  z-index: 6;
+  width: 14px;
+  margin-left: -7px; /* centred on the line */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  cursor: ew-resize;
+  touch-action: none;
+}
+.tl-flag[hidden] { display: none; }
+.tl-flag-head {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  background: #ff3b3b;
+  clip-path: polygon(0 0, 100% 0, 100% 55%, 50% 100%, 0 55%);
+}
+.tl-flag-stem { flex: 1; width: 2px; background: #ff3b3b; }
+.tl-flag:hover .tl-flag-head, .tl-flag:hover .tl-flag-stem { background: #ff6262; }
 .tl-content { position: relative; width: calc(var(--label-w) + var(--tl-w, 100%)); min-width: 100%; }
 
 .tl-row { display: grid; grid-template-columns: var(--label-w) var(--tl-w, 1fr); height: 28px; }

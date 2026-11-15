@@ -41,7 +41,7 @@ const SCALES = [
 ];
 const MAJOR_MIN_PX = 80; // room for a label
 
-let root, video, playhead, head, snapLine, ruler, rulerCanvas, content, topBar;
+let root, video, playhead, flag, snapLine, ruler, rulerCanvas, content, topBar;
 let lastAriaT = -1;
 let structureKey = '';
 let zoom = 1;
@@ -59,16 +59,20 @@ export function initTimeline(el, v, top) {
 }
 
 // ---- scrub bar on top ----
-// The whole video, end to end. The red knob is the playhead: click or drag
-// anywhere on the bar to move it. When zoomed in, the lighter box shows the part
-// of the video in view; drag it to scroll. With the whole video in view, the bar
-// lines up with the timeline, so the knob sits right above the red line.
+// The whole video, end to end: click or drag anywhere on it to move the playhead
+// (a hairline red mark shows where it is). When zoomed in, the lighter box shows
+// the part of the video in view; drag it to scroll.
+//
+// The playhead itself is one piece: a pin-point flag over this bar with the thin
+// red line running from its tip down through the ruler and every row. The flag
+// always sits on the line; drag it to scrub, frame by frame.
 const contentW = () => outDuration() * pxPerSec();
 const maxScroll = () => Math.max(0, contentW() - viewW());
 
 function initTopBar() {
   const win = topBar.querySelector('.tl-window');
-  root.addEventListener('scroll', () => { syncOverview(); drawRuler(); });
+  root.addEventListener('scroll', () => { syncOverview(); drawRuler(); placeFlag(); });
+  initFlag();
   new ResizeObserver(syncOverview).observe(topBar);
 
   // drag the view box: scroll
@@ -134,6 +138,48 @@ function syncOverview() {
   win.style.left = `${(root.scrollLeft / total) * track}px`;
   win.setAttribute('aria-valuenow', String(maxScroll() ? Math.round((root.scrollLeft / maxScroll()) * 100) : 0));
   knob.style.left = `${(outNow() / Math.max(0.001, outDuration())) * track}px`;
+  placeFlag();
+}
+
+// ---- the playhead flag ----
+function initFlag() {
+  flag = document.getElementById('tlFlag');
+  flag.addEventListener('pointerdown', (e) => {
+    if (!state.duration) return;
+    e.preventDefault();
+    e.stopPropagation();
+    flag.setPointerCapture(e.pointerId);
+    const seek = (ev) => {
+      const trackLeft = root.getBoundingClientRect().left + labelW();
+      seekOut(onFrame((ev.clientX - trackLeft + root.scrollLeft) / pxPerSec()));
+      keepPlayheadInView(); // dragging past the edge scrolls along
+    };
+    const up = () => {
+      flag.removeEventListener('pointermove', seek);
+      flag.removeEventListener('pointerup', up);
+    };
+    flag.addEventListener('pointermove', seek);
+    flag.addEventListener('pointerup', up);
+  });
+}
+
+// Puts the flag over the line: same x on screen, stem reaching down to the
+// top of the ruler where the line starts. Hidden while the playhead is scrolled
+// out of view.
+function placeFlag() {
+  if (!flag) return;
+  const pane = flag.parentElement; // the timeline pane (offsetParent is null while hidden)
+  if (!state.duration || !pane) { flag.hidden = true; return; }
+  const x = outNow() * pxPerSec() - root.scrollLeft;
+  const visible = x >= -1 && x <= viewW() + 1;
+  flag.hidden = !visible;
+  if (!visible) return;
+  const pr = pane.getBoundingClientRect();
+  const tr = root.getBoundingClientRect();
+  const br = topBar.getBoundingClientRect();
+  flag.style.left = `${tr.left - pr.left + labelW() + x + 1}px`; // +1: centre of the 2px line
+  flag.style.top = `${br.top - pr.top - 3}px`;
+  flag.style.height = `${tr.top - br.top + 3}px`;
 }
 
 // If the playhead has gone off screen, scroll so it's back in view.
@@ -199,7 +245,7 @@ export function updatePlayhead(t) {
   if (!playhead) return;
   const x = srcToOut(t) * pxPerSec();
   playhead.style.left = `${x}px`;
-  if (head) head.style.left = `${x}px`;
+  placeFlag();
   syncOverview();
   // while playing zoomed in, page the view along with the playhead
   if (!video.paused && zoom > 1 && (x < root.scrollLeft || x > root.scrollLeft + viewW() - 20)) {
@@ -259,6 +305,7 @@ function build() {
   root.scrollLeft = scroll;
   syncOverview();
   drawRuler();
+  placeFlag();
   const refocus = focusedKey === 'ruler' ? ruler : bars.get(focusedKey);
   refocus?.focus();
   updatePlayhead(video.currentTime);
@@ -289,11 +336,6 @@ function rulerRow() {
   track.setAttribute('aria-valuemin', '0');
   track.setAttribute('aria-valuemax', outDuration().toFixed(2));
   track.addEventListener('keydown', onRulerKey);
-  // the playhead's handle: lives in the ruler, which stays on top while rows scroll
-  head = document.createElement('div');
-  head.className = 'tl-head';
-  head.dataset.hint = 'The playhead. Drag it to scrub; the timeline follows when you drag past the edge.';
-  track.appendChild(head);
   lastAriaT = -1;
   // ticks are drawn on a canvas covering just the visible part (see drawRuler)
   rulerCanvas = document.createElement('canvas');
