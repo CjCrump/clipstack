@@ -174,6 +174,41 @@ export function makeMain(id) {
   state.selected = { type: 'text', id };
 }
 
+// ---- tracks ----
+// Text and emoji each share rows: item.track is the row number within its kind.
+// Two items on one row never overlap in time.
+export const kindOf = (t) => (t.kind === 'emoji' ? 'emoji' : 'text');
+const overlaps = (a, b) => a.start < b.end - 1e-6 && b.start < a.end - 1e-6;
+
+// Can `item` sit on row `n` of its kind without overlapping anything there?
+export function trackFree(item, n) {
+  return !state.texts.some((o) => o !== item && kindOf(o) === kindOf(item) && o.track === n && overlaps(o, item));
+}
+
+// Give every item a row: new ones (no track yet) and ones that now overlap
+// something go to the lowest free row; `moved` ids are the ones that give way.
+// Then empty rows are removed so the numbers stay 0, 1, 2...
+export function tidyTracks(moved = []) {
+  const late = new Set(moved);
+  for (const kind of ['text', 'emoji']) {
+    const items = state.texts.filter((t) => kindOf(t) === kind);
+    const order = [...items].sort((a, b) =>
+      (late.has(a.id) - late.has(b.id)) || ((a.track ?? 1e9) - (b.track ?? 1e9)) || (a.start - b.start));
+    const placed = [];
+    for (const t of order) {
+      const clash = (n) => placed.some((o) => o.track === n && overlaps(o, t));
+      if (t.track == null || clash(t.track)) {
+        let n = 0;
+        while (clash(n)) n++;
+        t.track = n;
+      }
+      placed.push(t);
+    }
+    const used = [...new Set(items.map((t) => t.track))].sort((a, b) => a - b);
+    for (const t of items) t.track = used.indexOf(t.track);
+  }
+}
+
 // ---- moving and scaling a selection together ----
 // Drags take a snapshot when they start, then apply one move or scale to all of it.
 export const snapshotItems = (items) => items.map((it) => ({ it, x: it.x, y: it.y, size: it.size }));

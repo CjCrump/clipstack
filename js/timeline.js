@@ -14,7 +14,7 @@
 
 import {
   state, emit, subscribe, clamp, srcToOut, outToSrc, outDuration, pieceEdgesOut, pieces,
-  selectedTexts, isSelected, selectOnly, toggleSelect, makeMain,
+  selectedTexts, isSelected, selectOnly, toggleSelect, makeMain, kindOf, trackFree, tidyTracks,
 } from './state.js';
 
 const MIN_LEN = 0.1; // shortest text/emoji, output seconds
@@ -46,6 +46,7 @@ let root, video, playhead, phLayer, flag, snapLine, ruler, rulerCanvas, content,
 let lastAriaT = -1;
 let structureKey = '';
 let skipFocusSelect = false; // a Ctrl/Shift + click already set the selection
+let dragging = null; // ids being dragged: rows are tidied when the drag ends, not during it
 let zoom = 1;
 const bars = new Map(); // "type:id" -> element
 
@@ -291,7 +292,8 @@ export function updatePlayhead(t) {
 }
 
 function render() {
-  const key = `${state.duration}|${pieces().map((p) => `${p.id}:${p.rate}`)}|${state.texts.map((t) => t.id)}|${zoom}`;
+  if (!dragging) tidyTracks();
+  const key = `${state.duration}|${pieces().map((p) => `${p.id}:${p.rate}`)}|${state.texts.map((t) => `${t.id}:${kindOf(t)}${t.track}`)}|${zoom}`;
   if (key !== structureKey) {
     structureKey = key;
     build();
@@ -316,12 +318,14 @@ function build() {
 
   content.appendChild(rulerRow());
   content.appendChild(clipRow());
-  const counts = { text: 0, emoji: 0 };
-  state.texts.forEach((t) => {
-    const kind = t.kind === 'emoji' ? 'emoji' : 'text';
-    counts[kind]++;
-    content.appendChild(lane(`${kind === 'emoji' ? 'Emoji' : 'Text'} ${counts[kind]}`, t));
-  });
+  // one row per track: Text 1, Text 2... then Emoji 1, Emoji 2...
+  for (const kind of ['text', 'emoji']) {
+    const items = state.texts.filter((t) => kindOf(t) === kind);
+    const rows = items.length ? Math.max(...items.map((t) => t.track)) + 1 : 0;
+    for (let n = 0; n < rows; n++) {
+      content.appendChild(lane(kind, n, items.filter((t) => t.track === n)));
+    }
+  }
 
   const layer = document.createElement('div');
   layer.className = 'tl-playhead-layer';
@@ -464,15 +468,30 @@ function clipRow() {
   return r;
 }
 
-function lane(labelText, item) {
-  const { r, track } = row(labelText);
-  const bar = makeBar('text', item, item.kind === 'emoji' ? 'emoji' : '');
-  bar.insertAdjacentHTML('beforeend', '<div class="tl-edge l"></div><div class="tl-edge r"></div>');
-  bar.dataset.hint = 'When this shows. Drag to move it, drag an edge to trim; edges snap to splits and the playhead. Arrows move it, [ and ] set its ends to the playhead.';
-  bar.addEventListener('pointerdown', (e) => dragBar(e, item, bar));
-  bar.addEventListener('keydown', (e) => onBarKey(e, item));
-  track.appendChild(bar);
+function lane(kind, n, items) {
+  const { r, track } = row(`${kind === 'emoji' ? 'Emoji' : 'Text'} ${n + 1}`);
+  r.dataset.kind = kind;
+  r.dataset.track = n;
+  for (const item of items) {
+    const bar = makeBar('text', item, kind === 'emoji' ? 'emoji' : '');
+    bar.insertAdjacentHTML('beforeend', '<div class="tl-edge l"></div><div class="tl-edge r"></div>');
+    bar.dataset.hint = 'When this shows. Drag sideways to move it, up or down to change track; drag an edge to trim. Left/Right move it, Up/Down change track, [ and ] set its ends to the playhead.';
+    bar.addEventListener('pointerdown', (e) => dragBar(e, item, bar));
+    bar.addEventListener('keydown', (e) => onBarKey(e, item));
+    track.appendChild(bar);
+  }
   return r;
+}
+
+// Which track of `kind` the pointer is over; below the last row means a new one.
+function trackAt(kind, clientY) {
+  const rows = [...content.querySelectorAll(`.tl-row[data-kind="${kind}"]`)];
+  if (!rows.length) return 0;
+  for (const r of rows) {
+    const b = r.getBoundingClientRect();
+    if (clientY < b.bottom) return clientY < b.top && r === rows[0] ? 0 : Number(r.dataset.track);
+  }
+  return rows.length;
 }
 
 function makeBar(type, item, extra) {
@@ -606,9 +625,13 @@ function dragBar(e, item, bar) {
   const others = selectedTexts().filter((t) => t !== item).map((t) => ({ t, ...outRange(t) }));
   const minShift = -Math.min(s0, ...others.map((o) => o.s));
   const maxShift = total - Math.max(e0, ...others.map((o) => o.e));
-  bar.setPointerCapture(e.pointerId);
+  dragging = [item.id, ...others.map((o) => o.t.id)];
 
   const move = (ev) => {
+    if (mode === 'move') { // up or down: change track, if there's room there
+      const n = trackAt(kindOf(item), ev.clientY);
+      if (n !== item.track && trackFree(item, n)) item.track = n;
+    }
     const dt = (ev.clientX - px) / pxPerSec();
     let s = s0;
     let en = e0;
@@ -636,13 +659,18 @@ function dragBar(e, item, bar) {
     setOutRange(item, s, en);
     emit();
   };
+  // on the window: the bar is rebuilt when it changes row, and the drag carries on
   const up = () => {
     showSnap(null);
-    bar.removeEventListener('pointermove', move);
-    bar.removeEventListener('pointerup', up);
+    const moved = dragging;
+    dragging = null;
+    tidyTracks(moved); // anything dropped on top of another item moves to a free row
+    emit();
+    window.removeEventListener('pointermove', move);
+    window.removeEventListener('pointerup', up);
   };
-  bar.addEventListener('pointermove', move);
-  bar.addEventListener('pointerup', up);
+  window.addEventListener('pointermove', move);
+  window.addEventListener('pointerup', up);
 }
 
 // ---- keyboard ----
@@ -668,6 +696,18 @@ function onBarKey(e, item) {
   const step = e.shiftKey ? 1 : 0.1;
   const dir = e.key === 'ArrowLeft' ? -1 : e.key === 'ArrowRight' ? 1 : 0;
   const o = outNow();
+
+  if (e.key === 'ArrowUp' || e.key === 'ArrowDown') { // change track: next free row that way
+    const step = e.key === 'ArrowUp' ? -1 : 1;
+    let n = item.track + step;
+    while (n >= 0 && !trackFree(item, n)) n += step;
+    if (n >= 0) {
+      item.track = n;
+      emit();
+    }
+    e.preventDefault();
+    return;
+  }
 
   if (dir && (e.ctrlKey || e.metaKey)) {
     setOutRange(item, s, clamp(en + dir * step, s + MIN_LEN, total));
