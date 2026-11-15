@@ -3,6 +3,7 @@
 
 import { state, emit, OUT_W, OUT_H, slotH, clamp } from './state.js';
 import { FONT, drawComposite, drawText, textVisual } from './render.js';
+import { showStatus, OVERLAP_MSG } from './status.js';
 
 const HANDLE = 44; // handle size in canvas px
 
@@ -144,6 +145,7 @@ function onPointerDown(e) {
       (i.id === selId || (t >= i.start && t <= i.end)) && inside(p, textBox(i)));
     tx = hits[hits.length - 1] || null;
     if (tx) mode = 'move';
+    if (hits.length > 1) showStatus(OVERLAP_MSG, 20000);
   }
 
   if (!tx) {

@@ -12,6 +12,7 @@ import { initLoader, canExportInBrowser } from './loader.js';
 import { emojiReady } from './emoji.js';
 import { buildEmojiPicker } from './emojiPicker.js';
 import { initHints } from './hints.js';
+import { showStatus } from './status.js';
 import { initHistory, resetHistory, undo, redo, canUndo, canRedo, onHistoryChange } from './history.js';
 
 const $ = (id) => document.getElementById(id);
@@ -166,16 +167,6 @@ function splitAtPlayhead() {
   emit();
 }
 $('splitBtn').addEventListener('click', splitAtPlayhead);
-
-let statusTimer = 0;
-function showStatus(msg) {
-  const n = $('notice');
-  n.textContent = msg;
-  n.className = 'notice info';
-  n.hidden = false;
-  clearTimeout(statusTimer);
-  statusTimer = setTimeout(() => { n.hidden = true; }, 4000);
-}
 
 $('zoomIn').addEventListener('click', () => zoomBy(1.5));
 $('zoomOut').addEventListener('click', () => zoomBy(1 / 1.5));

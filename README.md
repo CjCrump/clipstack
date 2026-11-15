@@ -1,8 +1,10 @@
 # clipstack
 
 Free, open source split-screen vertical clip editor. Turns a 16:9 gameplay clip into a
-9:16 video with the gameplay on top and your facecam below, plus text, emoji and sped-up
-sections. Runs entirely in the browser: no upload, no watermark, no account.
+9:16 video with the gameplay on top and your facecam below, and a 16:9 version from the
+same edit. Split the clip, delete or speed up pieces, add text and emoji, undo and redo,
+then export vertical, horizontal or both. Runs entirely in the browser: no upload, no
+watermark, no account.
 
 Live at https://games.chanceitstudio.com/clipstack/
 

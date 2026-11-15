@@ -53,8 +53,8 @@ function makeBox(k, label) {
   el.setAttribute('aria-describedby', 'boxKeysHelp');
   el.dataset.hintFocus = 'only'; // a hover tip would sit in the way while dragging
   el.dataset.hint = k === 'A'
-    ? 'Top of the video, usually gameplay. Drag it, or drag a handle to resize. The other box follows so the frame stays full.'
-    : 'Bottom of the video, usually your facecam. Drag it, or drag a handle to resize. The other box follows so the frame stays full.';
+    ? 'Top of the video, usually gameplay. Drag it, or drag a handle to resize. The other box follows so the frame stays full. No facecam? Put the Bottom box right under the Top box for one tall crop.'
+    : 'Bottom of the video, usually your facecam. Drag it, or drag a handle to resize. The other box follows so the frame stays full. No facecam? Put the Bottom box right under the Top box for one tall crop.';
   el.addEventListener('pointerdown', (e) => startDrag(e, k));
   el.addEventListener('keydown', (e) => onBoxKey(e, k));
   overlay.appendChild(el);

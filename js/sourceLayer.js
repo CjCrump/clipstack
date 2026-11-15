@@ -9,6 +9,7 @@
 
 import { state, emit, clamp, OUT_W, OUT_H, HOR_W, HOR_H, placeIn } from './state.js';
 import { FONT, drawText, textVisual, fitRect } from './render.js';
+import { showStatus, OVERLAP_MSG } from './status.js';
 
 const SNAP_SCREEN = 8; // px
 const HANDLE_SCREEN = 12; // px
@@ -124,6 +125,7 @@ function onPointerDown(e) {
     const hits = state.texts.filter((i) => (i === sel || textVisual(i, t)) && inside(p, itemBox(i)));
     tx = hits[hits.length - 1] || null;
     if (tx) mode = 'move';
+    if (hits.length > 1) showStatus(OVERLAP_MSG, 20000);
   }
   if (!tx) return; // not on a text or emoji: let the crop boxes have it
 

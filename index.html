@@ -33,6 +33,9 @@
     "codeRepository": "https://github.com/CjCrump/clipstack",
     "featureList": [
       "Split one 16:9 clip into two linked crop boxes stacked 9:16",
+      "Exports vertical 9:16 and horizontal 16:9 from one edit",
+      "Split, delete and speed up pieces of the clip",
+      "Undo and redo",
       "Text overlays with timing",
       "Speed up sections, pitch kept",
       "MP4 export in the browser, no upload",
@@ -64,9 +67,9 @@
   <section id="tips" class="tips" aria-label="Quick start" hidden>
     <ol>
       <li><b>Load</b> a 16:9 clip.</li>
-      <li>Put the <b>Top</b> box on your gameplay, <b>Bottom</b> on your facecam.</li>
+      <li>Put the <b>Top</b> box on your gameplay, <b>Bottom</b> on your facecam. No facecam? Stack Bottom right under Top.</li>
       <li><b>Split</b> with S, then speed up or delete pieces. Add <b>text</b> or <b>emoji</b> at the playhead.</li>
-      <li><b>Export MP4</b>.</li>
+      <li><b>Export</b> vertical, horizontal or both.</li>
     </ol>
     <div class="tips-end">
       <p class="muted">Hover or Tab to anything for a hint.</p>
@@ -89,7 +92,7 @@
         </div>
         <div id="emptyMsg" class="empty">
           <h1>Free split-screen vertical clip editor</h1>
-          <p>Turn 16:9 gameplay into a 9:16 Short, Reel or TikTok with your facecam on top or bottom. Add text, speed up the slow parts, and export an MP4.</p>
+          <p>Turn 16:9 gameplay into a 9:16 Short, Reel or TikTok with your facecam on top or bottom, plus a 16:9 version from the same edit. Split, cut and speed up pieces, add text and emoji, and export MP4s.</p>
           <p>It all runs in your browser. No upload, no watermark, no account.</p>
           <p class="empty-start">Load or drop a 16:9 clip to start</p>
         </div>
@@ -99,7 +102,7 @@
     <section class="pane preview-pane">
       <div class="pane-title">Vertical <span class="muted">1080×1920</span></div>
       <div class="preview-wrap"><canvas id="preview" width="1080" height="1920" tabindex="0" data-hint-focus="only"
-        data-hint="Your finished video. With a text or emoji selected, arrows move it and + and - resize it."
+        data-hint="Your finished vertical video. With a text or emoji selected, arrows move it and + and - resize it. Items overlapping? Pick one by clicking its bar on the timeline."
         aria-label="9 by 16 preview" aria-describedby="previewKeysHelp"></canvas></div>
     </section>
 
