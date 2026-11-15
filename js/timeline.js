@@ -92,6 +92,8 @@ function rulerRow() {
   track.dataset.tlKey = 'ruler';
   track.setAttribute('role', 'slider');
   track.setAttribute('aria-label', 'Playhead');
+  track.dataset.hintFocus = 'only';
+  track.dataset.hint = 'Click or drag to move the playhead. Arrows step 0.1s, comma and period step one frame, Home and End jump.';
   track.setAttribute('aria-valuemin', '0');
   track.setAttribute('aria-valuemax', state.duration.toFixed(2));
   track.addEventListener('keydown', onRulerKey);
@@ -117,6 +119,9 @@ function lane(labelText, items, type) {
     bar.tabIndex = 0;
     bar.dataset.tlKey = key;
     bar.setAttribute('role', 'button');
+    bar.dataset.hint = type === 'speed'
+      ? 'Sped-up section. Drag to move it, drag an edge to trim. Arrows move it, [ and ] snap its ends to the playhead.'
+      : 'When this shows. Drag to move it, drag an edge to trim. Arrows move it, [ and ] snap its ends to the playhead.';
     bar.addEventListener('pointerdown', (e) => dragBar(e, type, item, bar));
     bar.addEventListener('focus', () => {
       if (state.selected?.type !== type || state.selected.id !== item.id) {

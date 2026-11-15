@@ -62,6 +62,7 @@ export async function buildEmojiPicker(container, onPick) {
   search.type = 'search';
   search.placeholder = 'Search: fire, laugh, skull…';
   search.setAttribute('aria-label', 'Search emoji');
+  search.dataset.hint = 'Type a name or a word like laugh, fire or skull. Down arrow jumps into the results.';
 
   const tones = el('div', 'emoji-tones');
   tones.setAttribute('role', 'group');
@@ -71,7 +72,7 @@ export async function buildEmojiPicker(container, onPick) {
     b.type = 'button';
     b.style.setProperty('--swatch', t.swatch);
     b.setAttribute('aria-label', `${t.label} skin tone`);
-    b.title = `${t.label} skin tone`;
+    b.dataset.hint = i ? `${t.label} skin tone, for emoji that have one.` : 'Default yellow, no skin tone.';
     b.addEventListener('click', () => { tone = i; syncTones(); draw(); });
     tones.appendChild(b);
   });
@@ -84,6 +85,7 @@ export async function buildEmojiPicker(container, onPick) {
     const b = el('button', 'emoji-tab', data.groups[id]);
     b.type = 'button';
     b.dataset.group = id;
+    b.dataset.hint = `Browse ${data.groups[id].toLowerCase()}.`;
     b.addEventListener('click', () => { group = id; search.value = ''; draw(); });
     tabs.appendChild(b);
   }

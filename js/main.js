@@ -10,6 +10,7 @@ import { buildFilter, buildCommand, safeFileName } from './exportFfmpeg.js';
 import { initLoader, canExportInBrowser } from './loader.js';
 import { emojiReady } from './emoji.js';
 import { buildEmojiPicker } from './emojiPicker.js';
+import { initHints } from './hints.js';
 
 const $ = (id) => document.getElementById(id);
 const video = $('video');
@@ -25,6 +26,23 @@ initCropBoxes({ stage: $('stage'), overlay: $('overlay'), wrap: $('sourceWrap'),
 initPreview(canvas, video);
 initTimeline($('timeline'), video);
 initPanel($('panel'), { onChangeEmoji: changeEmoji });
+initHints();
+
+// ---- quick start strip ----
+// Shown until closed. Closing it is the one thing Clipstack saves in your browser.
+const TIPS_KEY = 'clipstack.tipsClosed';
+const tipsClosed = () => { try { return localStorage.getItem(TIPS_KEY) === '1'; } catch { return false; } };
+$('tips').hidden = tipsClosed();
+$('tipsClose').addEventListener('click', () => {
+  $('tips').hidden = true;
+  try { localStorage.setItem(TIPS_KEY, '1'); } catch { /* private mode: it just shows again next time */ }
+  $('tipsBtn').focus();
+});
+$('tipsBtn').addEventListener('click', () => {
+  $('tips').hidden = false;
+  try { localStorage.removeItem(TIPS_KEY); } catch { /* ignore */ }
+  $('tipsClose').focus();
+});
 
 // Bangers ships with the app (fonts/), so every visitor gets the same text.
 const fontReady = document.fonts.load('100px Bangers');

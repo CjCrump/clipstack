@@ -7,6 +7,27 @@ import { emojiUrl } from './emoji.js';
 
 const RATES = [1.5, 2, 3, 4, 8];
 
+const SIZE_TEXT = 'Letter height in pixels, 30 to 400.';
+const SIZE_EMOJI = 'Width and height in pixels, 30 to 400.';
+const START_HINT = 'When it appears, in seconds of your original clip.';
+const END_HINT = 'When it disappears, in seconds of your original clip.';
+const DELETE_HINT = 'Remove it. The Delete key does the same.';
+
+// Position, size, timing and animation: the same for text and emoji
+const placeFields = (sizeHint) => `
+      <div class="row">
+        <label data-hint="Centre of it, across. 0 is the left edge, 1080 the right.">X <input data-k="x" type="number" min="0" max="1080" step="10"></label>
+        <label data-hint="Centre of it, down. 0 is the top, 1920 the bottom.">Y <input data-k="y" type="number" min="0" max="1920" step="10"></label>
+      </div>
+      <label data-hint="${sizeHint}">Size <input data-k="size" type="number" min="30" max="400" step="2"></label>
+      <div class="row">
+        <label data-hint="${START_HINT}">Start (s) <input data-k="start" type="number" step="0.05" min="0"></label>
+        <label data-hint="${END_HINT}">End (s) <input data-k="end" type="number" step="0.05" min="0"></label>
+      </div>
+      <label data-hint="Pop bounces it in. Either way it fades out at the end.">Animation
+        <select data-k="anim"><option value="pop">Pop</option><option value="none">None</option></select>
+      </label>`;
+
 let root;
 let shownKey; // undefined so the first render always builds
 let onChangeEmoji = () => {};
@@ -37,47 +58,25 @@ function build(item) {
   if (state.selected.type === 'text' && item.kind === 'emoji') {
     root.innerHTML = `
       <div class="emoji-current"><img alt="" width="44" height="44"><span></span></div>
-      <button class="btn" data-act="change">Change emoji</button>
-      <div class="row">
-        <label>X <input data-k="x" type="number" min="0" max="1080" step="10"></label>
-        <label>Y <input data-k="y" type="number" min="0" max="1920" step="10"></label>
-      </div>
-      <label>Size <input data-k="size" type="number" min="30" max="400" step="2"></label>
-      <div class="row">
-        <label>Start (s) <input data-k="start" type="number" step="0.05" min="0"></label>
-        <label>End (s) <input data-k="end" type="number" step="0.05" min="0"></label>
-      </div>
-      <label>Animation
-        <select data-k="anim"><option value="pop">Pop</option><option value="none">None</option></select>
-      </label>
-      <button class="btn danger" data-act="delete">Delete emoji</button>`;
+      <button class="btn" data-act="change" data-hint="Swap it for another emoji. Position and timing stay.">Change emoji</button>
+${placeFields(SIZE_EMOJI)}
+      <button class="btn danger" data-act="delete" data-hint="${DELETE_HINT}">Delete emoji</button>`;
     root.querySelector('.emoji-current img').src = emojiUrl(item.file);
     root.querySelector('.emoji-current span').textContent = item.label;
     root.querySelector('[data-act="change"]').addEventListener('click', () => onChangeEmoji(item));
   } else if (state.selected.type === 'text') {
     root.innerHTML = `
-      <label>Text <textarea data-k="text" rows="2" maxlength="${MAX_TEXT}"></textarea></label>
-      <div class="row">
-        <label>X <input data-k="x" type="number" min="0" max="1080" step="10"></label>
-        <label>Y <input data-k="y" type="number" min="0" max="1920" step="10"></label>
-      </div>
-      <label>Size <input data-k="size" type="number" min="30" max="400" step="2"></label>
-      <div class="row">
-        <label>Start (s) <input data-k="start" type="number" step="0.05" min="0"></label>
-        <label>End (s) <input data-k="end" type="number" step="0.05" min="0"></label>
-      </div>
-      <label>Animation
-        <select data-k="anim"><option value="pop">Pop</option><option value="none">None</option></select>
-      </label>
-      <button class="btn danger" data-act="delete">Delete text</button>`;
+      <label data-hint="What it says, up to ${MAX_TEXT} characters.">Text <textarea data-k="text" rows="2" maxlength="${MAX_TEXT}"></textarea></label>
+${placeFields(SIZE_TEXT)}
+      <button class="btn danger" data-act="delete" data-hint="${DELETE_HINT}">Delete text</button>`;
   } else {
     root.innerHTML = `
-      <label>Speed <select data-k="rate">${RATES.map((r) => `<option value="${r}">${r}x</option>`).join('')}</select></label>
+      <label data-hint="How much faster this part plays. Voices keep their pitch.">Speed <select data-k="rate">${RATES.map((r) => `<option value="${r}">${r}x</option>`).join('')}</select></label>
       <div class="row">
-        <label>Start (s) <input data-k="start" type="number" step="0.05" min="0"></label>
-        <label>End (s) <input data-k="end" type="number" step="0.05" min="0"></label>
+        <label data-hint="${START_HINT}">Start (s) <input data-k="start" type="number" step="0.05" min="0"></label>
+        <label data-hint="${END_HINT}">End (s) <input data-k="end" type="number" step="0.05" min="0"></label>
       </div>
-      <button class="btn danger" data-act="delete">Delete speed</button>`;
+      <button class="btn danger" data-act="delete" data-hint="${DELETE_HINT}">Delete speed</button>`;
   }
 
   root.querySelectorAll('[data-k]').forEach((input) => {

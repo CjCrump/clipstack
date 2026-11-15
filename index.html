@@ -48,17 +48,29 @@
 <body>
   <header class="toolbar">
     <strong class="brand">Clipstack</strong>
-    <button id="loadBtn" class="btn">Load clip</button>
+    <button id="loadBtn" class="btn" data-hint="Open a 16:9 clip from your computer. You can also drop a video file anywhere on the page.">Load clip</button>
     <input type="file" id="fileInput" accept="video/*" hidden>
-    <button id="addText" class="btn" disabled>+ Text</button>
-    <button id="addEmoji" class="btn" disabled>+ Emoji</button>
-    <button id="addSpeed" class="btn" disabled>+ Speed</button>
+    <button id="addText" class="btn" disabled data-hint="Add a text pop at the playhead. Change the words in Properties." data-hint-disabled="Load a clip first.">+ Text</button>
+    <button id="addEmoji" class="btn" disabled data-hint="Add an emoji at the playhead. Search by name, like fire or skull." data-hint-disabled="Load a clip first.">+ Emoji</button>
+    <button id="addSpeed" class="btn" disabled data-hint="Speed up 3 seconds from the playhead, 4x to start. Voices keep their pitch." data-hint-disabled="Load a clip first.">+ Speed</button>
     <span class="spacer"></span>
-    <a class="toolbar-link" href="security.html">Security</a>
-    <button id="exportFfmpeg" class="btn" disabled>ffmpeg command</button>
-    <button id="exportBrowser" class="btn primary" disabled>Export MP4</button>
+    <a class="toolbar-link" href="security.html" data-hint="What Clipstack does with your clip. Short answer: it never leaves your computer.">Security</a>
+    <button id="exportFfmpeg" class="btn" disabled data-hint="Download a command to render with ffmpeg on your own computer. Emoji aren't included." data-hint-disabled="Load a clip first.">ffmpeg command</button>
+    <button id="exportBrowser" class="btn primary" disabled data-hint="Render the vertical video right here and download it as an MP4." data-hint-disabled="Load a clip first. If it stays grey after that, this browser can't export, so use the ffmpeg command.">Export MP4</button>
   </header>
   <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
+  <section id="tips" class="tips" aria-label="Quick start" hidden>
+    <ol>
+      <li><b>Load</b> a 16:9 clip.</li>
+      <li>Put the <b>Top</b> box on your gameplay, <b>Bottom</b> on your facecam.</li>
+      <li>Add <b>text</b>, <b>emoji</b> or a <b>speed-up</b> at the playhead.</li>
+      <li><b>Export MP4</b>.</li>
+    </ol>
+    <div class="tips-end">
+      <p class="muted">Hover or Tab to anything for a hint.</p>
+      <button id="tipsClose" class="btn" data-hint="Hide these steps. The Tips button brings them back.">Got it</button>
+    </div>
+  </section>
 
   <main class="workspace">
     <section class="pane source-pane">
@@ -79,7 +91,8 @@
 
     <section class="pane preview-pane">
       <div class="pane-title">Preview <span class="muted">1080×1920</span></div>
-      <div class="preview-wrap"><canvas id="preview" width="1080" height="1920" tabindex="0"
+      <div class="preview-wrap"><canvas id="preview" width="1080" height="1920" tabindex="0" data-hint-focus="only"
+        data-hint="Your finished video. With a text or emoji selected, arrows move it and + and - resize it."
         aria-label="9 by 16 preview" aria-describedby="previewKeysHelp"></canvas></div>
     </section>
 
@@ -91,9 +104,10 @@
 
   <footer class="timeline-pane">
     <div class="transport">
-      <button id="playBtn" class="btn" disabled>Play</button>
+      <button id="playBtn" class="btn" disabled data-hint="Play or pause. Space does the same when you're not typing in a field." data-hint-disabled="Load a clip first.">Play</button>
       <span id="timeLabel" class="mono">0.00 / 0.00</span>
-      <button id="keysBtn" class="btn">Keyboard shortcuts</button>
+      <button id="keysBtn" class="btn" data-hint="Every keyboard shortcut in one list.">Keyboard shortcuts</button>
+      <button id="tipsBtn" class="btn" data-hint="Show the quick start steps again.">Tips</button>
     </div>
     <div id="timeline" class="timeline"></div>
   </footer>
@@ -105,7 +119,7 @@
     <table class="keys">
       <tr><th colspan="2">Anywhere</th></tr>
       <tr><td>Space</td><td>Play or pause (when not on a button or field)</td></tr>
-      <tr><td>Delete</td><td>Remove the selected text or speed section</td></tr>
+      <tr><td>Delete</td><td>Remove the selected text, emoji or speed section</td></tr>
       <tr><td>Esc</td><td>Close this window</td></tr>
       <tr><th colspan="2">Crop boxes (Tab to one)</th></tr>
       <tr><td>Arrows</td><td>Move</td></tr>
@@ -118,7 +132,7 @@
       <tr><td>Arrows (on the ruler)</td><td>Move the playhead 0.1s</td></tr>
       <tr><td>, / .</td><td>Step one frame</td></tr>
       <tr><td>Home / End</td><td>Jump to start or end</td></tr>
-      <tr><td>Arrows (on a bar)</td><td>Move the text or speed section 0.1s</td></tr>
+      <tr><td>Arrows (on a bar)</td><td>Move the text, emoji or speed section 0.1s</td></tr>
       <tr><td>Ctrl + Arrows</td><td>Shorten or lengthen it</td></tr>
       <tr><td>[ / ]</td><td>Set its start or end to the playhead</td></tr>
       <tr><td>Enter</td><td>Jump the playhead to its start</td></tr>

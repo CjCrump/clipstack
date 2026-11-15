@@ -386,3 +386,34 @@ select:focus-visible,
 
 /* selected emoji in the properties panel */
 .emoji-current { display: flex; align-items: center; gap: 10px; color: var(--text); }
+
+/* hint tip: one floating element placed by js/hints.js */
+.hint-tip {
+  position: fixed;
+  z-index: 50;
+  max-width: 280px;
+  padding: 7px 10px;
+  background: #f4f4f6;
+  color: #15161a;
+  border-radius: 6px;
+  font-size: 13px;
+  line-height: 1.4;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, .45);
+}
+.hint-tip[hidden] { display: none; }
+
+/* quick start strip under the toolbar */
+.tips {
+  display: flex;
+  align-items: center;
+  gap: 8px 20px;
+  padding: 10px 14px;
+  background: color-mix(in srgb, var(--accent) 16%, var(--pane));
+  border-bottom: 1px solid var(--line);
+  font-size: 14px;
+}
+.tips[hidden] { display: none; }
+.tips ol { flex: 1; display: flex; flex-wrap: wrap; gap: 6px 22px; margin: 0; padding-left: 18px; }
+.tips-end { display: flex; align-items: center; gap: 14px; white-space: nowrap; }
+.tips-end p { margin: 0; }
+@media (max-width: 900px) { .tips { flex-wrap: wrap; } .tips-end { margin-left: auto; } }
