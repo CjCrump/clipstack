@@ -16,7 +16,7 @@ export function initPreview(c, v) {
   canvas.addEventListener('keydown', onKey);
 }
 
-// Keyboard: with a text selected, arrows move it and +/- resize it (Shift = bigger steps).
+// Keyboard: with a text or emoji selected, arrows move it and +/- resize it (Shift = bigger steps).
 function onKey(e) {
   const tx = state.selected?.type === 'text' && state.texts.find((i) => i.id === state.selected.id);
   if (!tx) return;
@@ -86,6 +86,10 @@ function drawGuides() {
 }
 
 function textBox(tx) {
+  if (tx.kind === 'emoji') {
+    const s = tx.size * 1.06;
+    return { x: tx.x - s / 2, y: tx.y - s / 2, w: s, h: s };
+  }
   ctx.font = `${tx.size}px ${FONT}`;
   const w = ctx.measureText(tx.text).width + tx.size * 0.3;
   const h = tx.size * 1.1;

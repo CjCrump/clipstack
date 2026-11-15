@@ -8,6 +8,8 @@ import { initPanel, deleteSelected } from './panel.js';
 import { exportMp4, ExportError } from './exportMp4.js';
 import { buildFilter, buildCommand, safeFileName } from './exportFfmpeg.js';
 import { initLoader, canExportInBrowser } from './loader.js';
+import { emojiReady } from './emoji.js';
+import { buildEmojiPicker } from './emojiPicker.js';
 
 const $ = (id) => document.getElementById(id);
 const video = $('video');
@@ -22,7 +24,7 @@ const DEFAULT_B = { x: 36, y: 730, w: 562 };
 initCropBoxes({ stage: $('stage'), overlay: $('overlay'), wrap: $('sourceWrap'), readout: $('splitReadout') });
 initPreview(canvas, video);
 initTimeline($('timeline'), video);
-initPanel($('panel'));
+initPanel($('panel'), { onChangeEmoji: changeEmoji });
 
 // Bangers ships with the app (fonts/), so every visitor gets the same text.
 const fontReady = document.fonts.load('100px Bangers');
@@ -68,7 +70,7 @@ video.addEventListener('loadedmetadata', () => {
   clampBoxes();
   $('stage').classList.add('ready');
   $('emptyMsg').hidden = true;
-  ['addText', 'addSpeed', 'exportFfmpeg', 'playBtn'].forEach((id) => { $(id).disabled = false; });
+  ['addText', 'addEmoji', 'addSpeed', 'exportFfmpeg', 'playBtn'].forEach((id) => { $(id).disabled = false; });
   $('exportBrowser').disabled = !canExportInBrowser();
   layout();
   emit();
@@ -85,6 +87,35 @@ $('addText').addEventListener('click', () => {
   state.selected = { type: 'text', id: item.id };
   emit();
 });
+
+// Emoji open the picker; the pick lands at the playhead like a text does.
+function pickEmoji(title, onPick) {
+  openModal(title, '');
+  buildEmojiPicker($('modalBody'), (pick) => {
+    closeModal();
+    onPick(pick);
+  });
+}
+
+$('addEmoji').addEventListener('click', () => {
+  const t = video.currentTime;
+  pickEmoji('Add emoji', ({ file, label }) => {
+    const item = {
+      id: uid(), kind: 'emoji', file, label, x: OUT_W / 2, y: 760, size: 240,
+      start: t, end: Math.min(state.duration, t + 1.4), anim: 'pop',
+    };
+    state.texts.push(item);
+    state.selected = { type: 'text', id: item.id };
+    emit();
+  });
+});
+
+function changeEmoji(item) {
+  pickEmoji('Change emoji', ({ file, label }) => {
+    Object.assign(item, { file, label });
+    emit();
+  });
+}
 
 $('addSpeed').addEventListener('click', () => {
   const t = video.currentTime;
@@ -184,6 +215,7 @@ $('exportBrowser').addEventListener('click', async () => {
   const started = performance.now();
   try {
     await fontReady; // never bake a fallback font into the video
+    await emojiReady(state.texts.filter((t) => t.kind === 'emoji').map((t) => t.file)); // or a missing emoji
     const blob = await exportMp4({
       file: sourceFile,
       signal: controller.signal,
@@ -228,6 +260,7 @@ $('exportFfmpeg').addEventListener('click', async () => {
       <b id="cmdFile"></b>, open a terminal there, and run:</p>
     <p id="renameNote" class="notice info" hidden></p>
     <pre id="cmd"></pre>
+    <p id="emojiNote" class="notice info" hidden>Emoji aren't included in the ffmpeg command. Use Export MP4 to keep them.</p>
     <p class="muted">Needs ffmpeg 7 or newer.</p>
     <button class="btn" id="copyCmd">Copy command</button>`);
   $('cmdFile').textContent = state.fileName;
@@ -235,6 +268,7 @@ $('exportFfmpeg').addEventListener('click', async () => {
     $('renameNote').hidden = false;
     $('renameNote').textContent = `First rename your clip to "${safeName}". Its name has characters a terminal could treat as code.`;
   }
+  $('emojiNote').hidden = !state.texts.some((t) => t.kind === 'emoji');
   $('cmd').textContent = cmd;
   $('copyCmd').addEventListener('click', () => navigator.clipboard.writeText(cmd));
 });

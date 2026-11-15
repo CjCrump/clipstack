@@ -51,6 +51,7 @@
     <button id="loadBtn" class="btn">Load clip</button>
     <input type="file" id="fileInput" accept="video/*" hidden>
     <button id="addText" class="btn" disabled>+ Text</button>
+    <button id="addEmoji" class="btn" disabled>+ Emoji</button>
     <button id="addSpeed" class="btn" disabled>+ Speed</button>
     <span class="spacer"></span>
     <a class="toolbar-link" href="security.html">Security</a>
@@ -98,7 +99,7 @@
   </footer>
 
   <p id="boxKeysHelp" class="sr-only">Arrow keys move the box. Ctrl plus arrow keys reshape it, which changes the split. Plus and minus scale it. Hold Shift for bigger steps.</p>
-  <p id="previewKeysHelp" class="sr-only">With a text selected, arrow keys move it and plus and minus resize it. Hold Shift for bigger steps.</p>
+  <p id="previewKeysHelp" class="sr-only">With a text or emoji selected, arrow keys move it and plus and minus resize it. Hold Shift for bigger steps.</p>
 
   <template id="keysTemplate">
     <table class="keys">
@@ -110,9 +111,9 @@
       <tr><td>Arrows</td><td>Move</td></tr>
       <tr><td>Ctrl + Arrows</td><td>Reshape (changes the split; the other box follows)</td></tr>
       <tr><td>+ / −</td><td>Scale without changing the split</td></tr>
-      <tr><th colspan="2">Preview (Tab to it, with a text selected)</th></tr>
-      <tr><td>Arrows</td><td>Move the text</td></tr>
-      <tr><td>+ / −</td><td>Resize the text</td></tr>
+      <tr><th colspan="2">Preview (Tab to it, with a text or emoji selected)</th></tr>
+      <tr><td>Arrows</td><td>Move the text or emoji</td></tr>
+      <tr><td>+ / −</td><td>Resize the text or emoji</td></tr>
       <tr><th colspan="2">Timeline</th></tr>
       <tr><td>Arrows (on the ruler)</td><td>Move the playhead 0.1s</td></tr>
       <tr><td>, / .</td><td>Step one frame</td></tr>

@@ -11,7 +11,10 @@ export const state = {
   split: 0.68, // fraction of the output height used by the top box
   boxA: { x: 542, y: 41, w: 835 }, // top slot (gameplay), source pixels
   boxB: { x: 36, y: 730, w: 562 }, // bottom slot (facecam), source pixels
-  texts: [], // { id, text, x, y, size, start, end, anim }
+  // Overlay layers drawn over the video, in stacking order. Text: { id, text, ... }.
+  // Emoji: { id, kind: 'emoji', file, label, ... }. Both share x, y (centre), size,
+  // start, end and anim, so selecting, dragging and the timeline treat them the same.
+  texts: [], // { id, kind?, text | file+label, x, y, size, start, end, anim }
   speeds: [], // { id, start, end, rate }
   selected: null, // { type: 'text' | 'speed', id }
   exporting: false,

@@ -54,7 +54,12 @@ function build() {
 
   root.appendChild(rulerRow());
   root.appendChild(lane('Speed', state.speeds, 'speed'));
-  state.texts.forEach((t, i) => root.appendChild(lane(`Text ${i + 1}`, [t], 'text')));
+  const counts = { text: 0, emoji: 0 };
+  state.texts.forEach((t) => {
+    const kind = t.kind === 'emoji' ? 'emoji' : 'text';
+    counts[kind]++;
+    root.appendChild(lane(`${kind === 'emoji' ? 'Emoji' : 'Text'} ${counts[kind]}`, [t], 'text'));
+  });
 
   const layer = document.createElement('div');
   layer.className = 'tl-playhead-layer';
@@ -136,10 +141,11 @@ function layoutBars() {
     if (!item) continue;
     bar.style.left = `${item.start * pps}px`;
     bar.style.width = `${(item.end - item.start) * pps}px`;
-    const name = type === 'text' ? item.text : `${item.rate}x`;
+    const isEmoji = item.kind === 'emoji';
+    const name = type === 'text' ? (isEmoji ? item.label : item.text) : `${item.rate}x`;
     bar.querySelector('.tl-name').textContent = name;
     bar.setAttribute('aria-label',
-      `${type === 'text' ? 'Text' : 'Speed'} ${name}, ${item.start.toFixed(2)} to ${item.end.toFixed(2)} seconds`);
+      `${type === 'text' ? (isEmoji ? 'Emoji' : 'Text') : 'Speed'} ${name}, ${item.start.toFixed(2)} to ${item.end.toFixed(2)} seconds`);
     bar.classList.toggle('selected', key === sel);
   }
 }

@@ -1,7 +1,8 @@
-// Draws one finished output frame: both crops stacked, then the text layers.
+// Draws one finished output frame: both crops stacked, then the text and emoji layers.
 // Shared by the live preview and the exporter so they always match.
 
 import { state, OUT_W, OUT_H, box, slotH, boxH, srcToOut, popScale, popAlpha } from './state.js';
+import { emojiImage } from './emoji.js';
 
 export const FONT = 'Bangers, Impact, sans-serif';
 
@@ -36,6 +37,7 @@ export function textVisual(tx, t) {
 }
 
 export function drawText(ctx, tx, scale, alpha) {
+  if (tx.kind === 'emoji') return drawEmoji(ctx, tx, scale, alpha);
   const size = tx.size * scale;
   ctx.save();
   ctx.globalAlpha = alpha;
@@ -48,5 +50,16 @@ export function drawText(ctx, tx, scale, alpha) {
   ctx.strokeText(tx.text, tx.x, tx.y);
   ctx.fillStyle = '#fff';
   ctx.fillText(tx.text, tx.x, tx.y);
+  ctx.restore();
+}
+
+// Emoji are drawn size x size around their centre, so they scale like text does.
+function drawEmoji(ctx, em, scale, alpha) {
+  const img = emojiImage(em.file);
+  if (!img) return; // still loading; the preview draws it on a later frame
+  const s = em.size * scale;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.drawImage(img, em.x - s / 2, em.y - s / 2, s, s);
   ctx.restore();
 }

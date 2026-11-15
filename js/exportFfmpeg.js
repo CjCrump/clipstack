@@ -91,7 +91,8 @@ export function buildFilter(fontPath) {
   lines.push(`[sa]${cropFor('A')},scale=${OUT_W}:${topH},setsar=1[top]`);
   lines.push(`[sb]${cropFor('B')},scale=${OUT_W}:${OUT_H - topH},setsar=1[bot]`);
 
-  const texts = [...state.texts].sort((a, b) => a.start - b.start);
+  // ffmpeg runs on the user's computer and can't see the emoji images, so emoji are left out
+  const texts = state.texts.filter((t) => t.kind !== 'emoji').sort((a, b) => a.start - b.start);
   const chain = texts.map((t) => drawtext(t, fontPath));
   lines.push(`[top][bot]vstack${chain.length ? ',' + chain.join(',') : ''}[v]`);
 
