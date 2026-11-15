@@ -1,6 +1,6 @@
 // Entry point: wires the modules to the page and runs the render loop.
 
-import { state, emit, uid, clampBoxes, rateAt, pieceAt, nextKept, pieces, srcToOut, outDuration, MIN_PIECE, OUT_W, fromVertical } from './state.js';
+import { state, emit, uid, selectedTexts, selectOnly, clampBoxes, rateAt, pieceAt, nextKept, pieces, srcToOut, outDuration, MIN_PIECE, OUT_W, fromVertical } from './state.js';
 import { initCropBoxes, layout } from './cropBoxes.js';
 import { initPreview, drawPreview } from './preview.js';
 import { initSourceLayer, drawSourceLayer } from './sourceLayer.js';
@@ -13,6 +13,9 @@ import { emojiReady } from './emoji.js';
 import { buildEmojiPicker } from './emojiPicker.js';
 import { initHints } from './hints.js';
 import { showStatus } from './status.js';
+import {
+  initEditing, copySelection, cutSelection, paste, duplicateSelection, groupSelection, ungroupSelection, selectAllTexts,
+} from './editing.js';
 import { initHistory, resetHistory, undo, redo, canUndo, canRedo, onHistoryChange } from './history.js';
 
 const $ = (id) => document.getElementById(id);
@@ -32,6 +35,7 @@ initTimeline($('timeline'), video, $('tlTopScroll'));
 initPanel($('panel'), { onChangeEmoji: changeEmoji });
 initHints();
 initHistory();
+initEditing(video);
 
 // ---- undo / redo buttons ----
 const syncHistoryButtons = () => {
@@ -96,6 +100,7 @@ video.addEventListener('loadedmetadata', () => {
     texts: [],
     clips: [{ id: uid(), start: 0, end: video.duration, rate: 1 }],
     selected: null,
+    multi: [],
   });
   state.boxA = { x: DEFAULT_A.x * sx, y: DEFAULT_A.y * sy, w: DEFAULT_A.w * sx };
   state.boxB = { x: DEFAULT_B.x * sx, y: DEFAULT_B.y * sy, w: DEFAULT_B.w * sx };
@@ -209,6 +214,25 @@ document.addEventListener('keydown', (e) => {
     if (!typing) splitAtPlayhead();
     return;
   }
+  // Copy / cut / paste / duplicate / group / select all, for text and emoji.
+  // Inside a text field these keep their normal meaning.
+  if (ctrl && !e.altKey && !typing) {
+    const k = e.key.toLowerCase();
+    const has = selectedTexts().length > 0;
+    let done = true;
+    if (k === 'c' && has) copySelection();
+    else if (k === 'x' && has) cutSelection();
+    else if (k === 'v') paste();
+    else if (k === 'd') duplicateSelection(); // instead of Bookmark
+    else if (k === 'g' && e.shiftKey) ungroupSelection(); // instead of Find previous
+    else if (k === 'g') groupSelection(); // instead of Find next
+    else if (k === 'a') selectAllTexts();
+    else done = false;
+    if (done) {
+      e.preventDefault();
+      return;
+    }
+  }
   // Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y, except inside a text field, which has its own undo
   if (ctrl && !typing && ['z', 'y'].includes(e.key.toLowerCase())) {
     e.preventDefault();
@@ -220,7 +244,10 @@ document.addEventListener('keydown', (e) => {
   // fields type text; a focused button or link keeps Space and Enter for itself
   if (typing || ctrl || e.altKey) return;
   if (e.target.closest('button, a') && (e.code === 'Space' || e.key === 'Enter')) return;
-  if (e.code === 'Space') {
+  if (e.key === 'Escape' && (state.selected || state.multi.length)) {
+    selectOnly(null);
+    emit();
+  } else if (e.code === 'Space') {
     e.preventDefault();
     togglePlay();
   } else if (e.key === 'Delete' || e.key === 'Backspace') {

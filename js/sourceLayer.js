@@ -7,7 +7,10 @@
 // emoji is handled here first, so it moves the text instead of the box under it.
 // "Hide boxes" clears them away to see the clean horizontal frame.
 
-import { state, emit, clamp, HOR_W, HOR_H, placeIn, MIN_SIZE, MAX_SIZE } from './state.js';
+import {
+  state, emit, HOR_W, HOR_H, placeIn,
+  selectedTexts, isSelected, selectOnly, toggleSelect, makeMain, snapshotItems, moveItems, scaleItems,
+} from './state.js';
 import { FONT, drawText, textVisual, fitRect } from './render.js';
 import { showStatus, OVERLAP_MSG } from './status.js';
 
@@ -78,21 +81,23 @@ export function drawSourceLayer(t) {
     const v = textVisual(tx, t);
     if (v) drawText(ctx, tx, v.scale, v.alpha, 'h');
   }
-  const sel = selectedItem();
+  const items = selectedTexts();
+  for (const it of items) if (!textVisual(it, t)) drawText(ctx, it, 1, 0.35, 'h'); // ghosts so they can be placed
+  for (const it of items.slice(1)) outline(itemBox(it), [5, 4]);
+  if (items.length > 1) {
+    const bs = items.map(itemBox);
+    const pad = screenToFrame(5);
+    const x = Math.min(...bs.map((b) => b.x)) - pad;
+    const y = Math.min(...bs.map((b) => b.y)) - pad;
+    outline({ x, y, w: Math.max(...bs.map((b) => b.x + b.w)) + pad - x, h: Math.max(...bs.map((b) => b.y + b.h)) + pad - y }, [2, 4]);
+  }
+  const sel = items[0];
   if (sel) {
-    if (!textVisual(sel, t)) drawText(ctx, sel, 1, 0.35, 'h'); // ghost so it can be placed
     const r = itemBox(sel);
-    const lw = screenToFrame(2);
     const hs = screenToFrame(HANDLE_SCREEN);
-    ctx.save();
-    ctx.strokeStyle = '#7c5cff';
-    ctx.lineWidth = lw;
-    ctx.setLineDash([screenToFrame(7), screenToFrame(5)]);
-    ctx.strokeRect(r.x, r.y, r.w, r.h);
-    ctx.setLineDash([]);
+    outline(r, [7, 5]);
     ctx.fillStyle = '#7c5cff';
     ctx.fillRect(r.x + r.w - hs / 2, r.y + r.h - hs / 2, hs, hs);
-    ctx.restore();
   }
   if (guides.x !== null || guides.y !== null) {
     const g = screenToFrame(2);
@@ -102,6 +107,16 @@ export function drawSourceLayer(t) {
   }
 }
 
+// dashed outline, dash lengths in screen pixels
+function outline(r, dash) {
+  ctx.save();
+  ctx.strokeStyle = '#7c5cff';
+  ctx.lineWidth = screenToFrame(2);
+  ctx.setLineDash(dash.map(screenToFrame));
+  ctx.strokeRect(r.x, r.y, r.w, r.h);
+  ctx.restore();
+}
+
 const selectedItem = () => (state.selected?.type === 'text' ? state.texts.find((i) => i.id === state.selected.id) : null);
 const inside = (p, r) => p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h;
 
@@ -109,11 +124,12 @@ function onPointerDown(e) {
   if (state.exporting || !state.duration) return;
   const p = toFrame(e);
   const t = video.currentTime;
+  const additive = e.ctrlKey || e.metaKey || e.shiftKey; // Ctrl/Shift + click adds to the selection
   const sel = selectedItem();
   let mode = null;
   let tx = null;
 
-  if (sel) {
+  if (sel && !additive) {
     const r = itemBox(sel);
     const hs = screenToFrame(HANDLE_SCREEN);
     if (inside(p, { x: r.x + r.w - hs, y: r.y + r.h - hs, w: hs * 2, h: hs * 2 })) {
@@ -122,7 +138,7 @@ function onPointerDown(e) {
     }
   }
   if (!tx) {
-    const hits = state.texts.filter((i) => (i === sel || textVisual(i, t)) && inside(p, itemBox(i)));
+    const hits = state.texts.filter((i) => (isSelected(i.id) || textVisual(i, t)) && inside(p, itemBox(i)));
     tx = hits[hits.length - 1] || null;
     if (tx) mode = 'move';
     if (hits.length > 1) showStatus(OVERLAP_MSG, 20000);
@@ -131,11 +147,19 @@ function onPointerDown(e) {
 
   e.stopPropagation(); // keep the crop box underneath from moving
   e.preventDefault();
-  state.selected = { type: 'text', id: tx.id };
+  if (additive) {
+    toggleSelect(tx.id);
+    emit();
+    return;
+  }
+  // clicking something already selected keeps the selection, so the group moves together
+  if (isSelected(tx.id)) makeMain(tx.id);
+  else selectOnly('text', tx.id);
   emit();
 
   const h0 = placeIn(tx, 'h');
   const start = { x: tx.x, y: tx.y, size: tx.size, dist: Math.hypot(p.x - h0.x, p.y - h0.y) || 1 };
+  const group = snapshotItems(selectedTexts());
   canvas.setPointerCapture(e.pointerId);
 
   const move = (ev) => {
@@ -143,12 +167,12 @@ function onPointerDown(e) {
     if (mode === 'move') {
       // the horizontal frame is the source scaled by frame.w / srcW
       const k = frame.w / state.srcW;
-      tx.x = clamp(start.x + (q.x - p.x) / k, 0, state.srcW);
-      tx.y = clamp(start.y + (q.y - p.y) / k, 0, state.srcH);
-      snap(tx);
+      moveItems(group, (q.x - p.x) / k, (q.y - p.y) / k);
+      const before = { x: tx.x, y: tx.y };
+      snap(tx); // the grabbed item snaps to the centre lines; the rest follow it
+      moveItems(group.filter((g) => g.it !== tx).map((g) => ({ ...g, x: g.it.x, y: g.it.y })), tx.x - before.x, tx.y - before.y);
     } else {
-      const c = placeIn(tx, 'h');
-      tx.size = clamp((start.size * Math.hypot(q.x - c.x, q.y - c.y)) / start.dist, MIN_SIZE, MAX_SIZE);
+      scaleItems(group, { x: start.x, y: start.y }, Math.hypot(q.x - h0.x, q.y - h0.y) / start.dist);
     }
     emit();
   };

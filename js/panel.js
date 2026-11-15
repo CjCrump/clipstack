@@ -1,7 +1,8 @@
 // Properties panel for the selected text, emoji or speed segment.
 // Rebuilt only when the selection changes so typing never loses focus.
 
-import { state, emit, subscribe, getSelected, pieces, srcToOut, outToSrc, outDuration, MIN_SIZE, MAX_SIZE } from './state.js';
+import { state, emit, subscribe, getSelected, pieces, srcToOut, outToSrc, outDuration, MIN_SIZE, MAX_SIZE, selectedTexts } from './state.js';
+import { copySelection, duplicateSelection, groupSelection, ungroupSelection, deleteTexts } from './editing.js';
 import { MAX_TEXT } from './exportFfmpeg.js';
 import { emojiUrl } from './emoji.js';
 
@@ -42,7 +43,9 @@ export function initPanel(el, opts = {}) {
 
 function render() {
   const item = getSelected();
-  const key = item ? `${state.selected.type}:${item.id}:${item.file || ''}:${state.clips.length}` : null;
+  const sel = selectedTexts();
+  const multi = `${sel.length}:${sel.map((t) => t.group || 0).join(',')}`; // rebuild when the selection or grouping changes
+  const key = item ? `${state.selected.type}:${item.id}:${item.file || ''}:${state.clips.length}:${multi}` : null;
   if (key !== shownKey) {
     shownKey = key;
     build(item);
@@ -113,6 +116,7 @@ ${placeFields(SIZE_TEXT)}
     });
   });
   root.querySelector('[data-act="delete"]').addEventListener('click', deleteSelected);
+  if (state.selected.type === 'text') addMultiBlock();
 }
 
 function sync(item) {
@@ -133,7 +137,43 @@ function sync(item) {
   });
 }
 
+// With more than one text/emoji selected: a summary on top, with group, copy and
+// delete for all of them. The fields below still edit the main (first-clicked) one.
+function addMultiBlock() {
+  const sel = selectedTexts();
+  if (sel.length < 2) return;
+  const grouped = sel.every((t) => t.group && t.group === sel[0].group);
+  root.insertAdjacentHTML('afterbegin', `
+    <div class="multi-sel">
+      <p class="multi-count"></p>
+      <div class="multi-btns">
+        ${grouped
+          ? '<button class="btn" data-act="ungroup" data-hint="Split the group so each item moves and sizes on its own (Ctrl+Shift+G).">Ungroup</button>'
+          : '<button class="btn" data-act="group" data-hint="Lock these together: they move, size and copy as one (Ctrl+G).">Group</button>'}
+        <button class="btn" data-act="copy" data-hint="Copy them (Ctrl+C). Ctrl+V pastes at the playhead.">Copy</button>
+        <button class="btn" data-act="dup" data-hint="Put a copy of them at the playhead (Ctrl+D).">Duplicate</button>
+      </div>
+      <p class="muted">Fields below edit the one you clicked.</p>
+    </div>`);
+  root.querySelector('.multi-count').textContent = `${sel.length} selected${grouped ? ' · grouped' : ''}`;
+  const act = (name, fn) => root.querySelector(`[data-act="${name}"]`)?.addEventListener('click', fn);
+  act('group', groupSelection);
+  act('ungroup', ungroupSelection);
+  act('copy', copySelection);
+  act('dup', duplicateSelection);
+  const del = root.querySelector('[data-act="delete"]');
+  del.textContent = `Delete ${sel.length} items`;
+  del.dataset.hint = 'Remove everything selected. The Delete key does the same; Ctrl+Z brings it back.';
+}
+
 export function deleteSelected() {
+  if (state.selected?.type === 'text' || state.multi.length) {
+    const sel = selectedTexts();
+    if (sel.length) {
+      deleteTexts(sel);
+      return;
+    }
+  }
   const s = state.selected;
   if (!s) return;
   if (s.type === 'clip' && state.clips.length <= 1) return; // something has to stay

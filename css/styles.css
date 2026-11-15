@@ -322,6 +322,7 @@ body.dragging .source-wrap { outline: 3px dashed var(--accent); outline-offset: 
 .tl-bar.clip { box-shadow: inset -2px 0 0 #121317; } /* a visible seam where pieces meet */
 .tl-bar.emoji { background: #b0469a; }
 .tl-bar.cut { opacity: .35; }
+.tl-bar.grouped { border-left: 4px solid #ffe14d; } /* member of a group */
 .tl-bar.selected { outline: 2px solid #fff; }
 .tl-edge { position: absolute; top: 0; bottom: 0; width: 8px; cursor: ew-resize; }
 .tl-edge.l { left: 0; }
@@ -494,3 +495,9 @@ select:focus-visible,
 .export-pick { border: 1px solid var(--line); border-radius: 6px; padding: 10px 14px; display: grid; gap: 8px; }
 .export-pick label { display: flex; align-items: center; gap: 8px; cursor: pointer; }
 .cmd-label { margin: 14px 0 4px; font-weight: 600; }
+
+/* properties: more than one text/emoji selected */
+.multi-sel { display: grid; gap: 8px; padding: 10px; border: 1px dashed #7c5cff; border-radius: 6px; }
+.multi-count { margin: 0; font-weight: 600; color: var(--text); }
+.multi-btns { display: flex; flex-wrap: wrap; gap: 6px; }
+.multi-sel .muted { margin: 0; font-size: 12px; }

@@ -4,7 +4,8 @@
 // back into a point in the source through the crop box under the pointer.
 
 import {
-  state, emit, OUT_W, OUT_H, slotH, clamp, placeIn, fromVertical, vertScale, MIN_SIZE, MAX_SIZE,
+  state, emit, OUT_W, OUT_H, slotH, clamp, placeIn, fromVertical, vertScale,
+  selectedTexts, isSelected, selectOnly, toggleSelect, makeMain, snapshotItems, moveItems, scaleItems,
 } from './state.js';
 import { FONT, drawComposite, drawText, textVisual } from './render.js';
 import { showStatus, OVERLAP_MSG } from './status.js';
@@ -21,20 +22,21 @@ export function initPreview(c, v) {
   canvas.addEventListener('keydown', onKey);
 }
 
-// Keyboard: with a text or emoji selected, arrows move it and +/- resize it (Shift = bigger steps).
+// Keyboard: with text or emoji selected, arrows move the selection and +/- scale
+// it (a group grows as one). Shift = bigger steps.
 function onKey(e) {
-  const tx = state.selected?.type === 'text' && state.texts.find((i) => i.id === state.selected.id);
+  const items = selectedTexts();
+  const tx = items[0];
   if (!tx) return;
   const sc = vertScale(tx); // steps are in preview pixels, stored in source pixels
   const step = (e.shiftKey ? 50 : 10) / sc;
   const moves = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] };
+  const snap = snapshotItems(items);
   if (moves[e.key]) {
-    tx.x = clamp(tx.x + moves[e.key][0], 0, state.srcW);
-    tx.y = clamp(tx.y + moves[e.key][1], 0, state.srcH);
-  } else if (e.key === '+' || e.key === '=') {
-    tx.size = clamp(tx.size + 8 / sc, MIN_SIZE, MAX_SIZE);
-  } else if (e.key === '-' || e.key === '_') {
-    tx.size = clamp(tx.size - 8 / sc, MIN_SIZE, MAX_SIZE);
+    moveItems(snap, moves[e.key][0], moves[e.key][1]);
+  } else if (e.key === '+' || e.key === '=' || e.key === '-' || e.key === '_') {
+    const grow = e.key === '+' || e.key === '=' ? 1 : -1;
+    scaleItems(snap, { x: tx.x, y: tx.y }, (tx.size + (grow * 8) / sc) / tx.size);
   } else {
     return;
   }
@@ -48,13 +50,13 @@ export function drawPreview() {
   const t = video.currentTime;
   drawComposite(ctx, video.readyState >= 2 ? drawFromVideo : null, t);
 
-  // editor-only overlays
-  const sel = state.selected?.type === 'text' ? state.selected.id : null;
-  const tx = sel && state.texts.find((i) => i.id === sel);
-  if (tx) {
-    if (!textVisual(tx, t)) drawText(ctx, tx, 1, 0.35); // ghost so it can be placed
-    drawSelection(tx);
-  }
+  // editor-only overlays: ghosts of selected items that aren't showing right now,
+  // a thin outline on each selected item, the group's box, and the main one's handle
+  const items = selectedTexts();
+  for (const it of items) if (!textVisual(it, t)) drawText(ctx, it, 1, 0.35);
+  for (const it of items.slice(1)) drawOutline(textBox(it), 2, [8, 6]);
+  if (items.length > 1) drawOutline(unionBox(items.map(textBox)), 2, [3, 6]);
+  if (items[0]) drawSelection(items[0]);
   drawGuides();
 }
 
@@ -106,6 +108,23 @@ function textBox(tx) {
   return { x: x - w / 2, y: y - h / 2, w, h };
 }
 
+function drawOutline(r, width, dash) {
+  ctx.save();
+  ctx.strokeStyle = '#7c5cff';
+  ctx.lineWidth = width;
+  ctx.setLineDash(dash);
+  ctx.strokeRect(r.x, r.y, r.w, r.h);
+  ctx.restore();
+}
+
+function unionBox(boxes) {
+  const x = Math.min(...boxes.map((b) => b.x));
+  const y = Math.min(...boxes.map((b) => b.y));
+  const r = Math.max(...boxes.map((b) => b.x + b.w));
+  const bt = Math.max(...boxes.map((b) => b.y + b.h));
+  return { x: x - 8, y: y - 8, w: r - x + 16, h: bt - y + 16 };
+}
+
 function drawSelection(tx) {
   const r = textBox(tx);
   ctx.save();
@@ -133,13 +152,14 @@ function onPointerDown(e) {
   if (state.exporting) return;
   const p = toCanvas(e);
   const t = video.currentTime;
+  const additive = e.ctrlKey || e.metaKey || e.shiftKey; // Ctrl/Shift + click adds to the selection
   const selId = state.selected?.type === 'text' ? state.selected.id : null;
   const selTx = state.texts.find((i) => i.id === selId);
 
   let mode = null;
   let tx = null;
 
-  if (selTx) {
+  if (selTx && !additive) {
     const r = textBox(selTx);
     const corner = { x: r.x + r.w - HANDLE, y: r.y + r.h - HANDLE, w: HANDLE * 2, h: HANDLE * 2 };
     if (inside(p, corner)) {
@@ -151,36 +171,42 @@ function onPointerDown(e) {
   if (!tx) {
     // topmost visible text under the pointer (the selected ghost counts too)
     const hits = state.texts.filter((i) =>
-      (i.id === selId || (t >= i.start && t <= i.end)) && inside(p, textBox(i)));
+      (isSelected(i.id) || (t >= i.start && t <= i.end)) && inside(p, textBox(i)));
     tx = hits[hits.length - 1] || null;
     if (tx) mode = 'move';
     if (hits.length > 1) showStatus(OVERLAP_MSG, 20000);
   }
 
   if (!tx) {
-    state.selected = null;
+    if (!additive) selectOnly(null);
     emit();
     return;
   }
-
-  state.selected = { type: 'text', id: tx.id };
+  if (additive) {
+    toggleSelect(tx.id);
+    emit();
+    return;
+  }
+  // clicking something already selected keeps the selection, so the group moves together
+  if (isSelected(tx.id)) makeMain(tx.id);
+  else selectOnly('text', tx.id);
   emit();
 
   const v0 = placeIn(tx, 'v');
-  const start = { size: tx.size, dist: Math.hypot(p.x - v0.x, p.y - v0.y) || 1 };
+  const start = { x: tx.x, y: tx.y, size: tx.size, dist: Math.hypot(p.x - v0.x, p.y - v0.y) || 1 };
+  const snap = snapshotItems(selectedTexts());
   canvas.setPointerCapture(e.pointerId);
 
   const move = (ev) => {
     const q = toCanvas(ev);
     if (mode === 'move') {
+      // the grabbed item follows the pointer (and the guides); the rest move with it
       const v = snapPoint({ x: clamp(v0.x + q.x - p.x, 0, OUT_W), y: clamp(v0.y + q.y - p.y, 0, OUT_H) });
       const src = fromVertical(v.x, v.y);
-      tx.x = src.x;
-      tx.y = src.y;
+      moveItems(snap, src.x - start.x, src.y - start.y);
     } else {
-      const c = placeIn(tx, 'v');
-      const d = Math.hypot(q.x - c.x, q.y - c.y);
-      tx.size = clamp((start.size * d) / start.dist, MIN_SIZE, MAX_SIZE);
+      const d = Math.hypot(q.x - v0.x, q.y - v0.y);
+      scaleItems(snap, { x: start.x, y: start.y }, d / start.dist);
     }
     emit();
   };

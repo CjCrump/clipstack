@@ -14,6 +14,7 @@
 
 import {
   state, emit, subscribe, clamp, srcToOut, outToSrc, outDuration, pieceEdgesOut, pieces,
+  selectedTexts, isSelected, selectOnly, toggleSelect, makeMain,
 } from './state.js';
 
 const MIN_LEN = 0.1; // shortest text/emoji, output seconds
@@ -44,6 +45,7 @@ const MAJOR_MIN_PX = 80; // room for a label
 let root, video, playhead, phLayer, flag, snapLine, ruler, rulerCanvas, content, topBar;
 let lastAriaT = -1;
 let structureKey = '';
+let skipFocusSelect = false; // a Ctrl/Shift + click already set the selection
 let zoom = 1;
 const bars = new Map(); // "type:id" -> element
 
@@ -481,16 +483,21 @@ function makeBar(type, item, extra) {
   bar.tabIndex = 0;
   bar.dataset.tlKey = key;
   bar.setAttribute('role', 'button');
-  bar.addEventListener('focus', () => select(type, item.id));
+  bar.addEventListener('focus', () => {
+    if (skipFocusSelect) { skipFocusSelect = false; return; }
+    select(type, item.id);
+  });
   bars.set(key, bar);
   return bar;
 }
 
+// Plain click or Tab: select just this, unless it's already part of the selection
+// (then it becomes the main one and the rest stay selected, so they move together).
 function select(type, id) {
-  if (state.selected?.type !== type || state.selected.id !== id) {
-    state.selected = { type, id };
-    emit();
-  }
+  if (state.selected?.type === type && state.selected.id === id) return;
+  if (type === 'text' && isSelected(id)) makeMain(id);
+  else selectOnly(type, id);
+  emit();
 }
 
 function layoutBars() {
@@ -507,7 +514,8 @@ function layoutBars() {
     bar.style.left = `${s * pps}px`;
     bar.style.width = `${Math.max(cut ? 6 : 2, (e - s) * pps)}px`;
     bar.classList.toggle('cut', cut);
-    bar.classList.toggle('selected', key === sel);
+    bar.classList.toggle('selected', key === sel || (type === 'text' && isSelected(Number(id))));
+    bar.classList.toggle('grouped', type === 'text' && !!item.group);
     let name;
     let label;
     if (type === 'clip') {
@@ -583,11 +591,21 @@ function dragBar(e, item, bar) {
   e.preventDefault();
   e.stopPropagation();
   const mode = e.target.classList.contains('l') ? 'l' : e.target.classList.contains('r') ? 'r' : 'move';
+  if (e.ctrlKey || e.metaKey || e.shiftKey) { // add to / take out of the selection
+    skipFocusSelect = true;
+    toggleSelect(item.id);
+    emit();
+    return;
+  }
   select('text', item.id);
 
   const px = e.clientX;
   const { s: s0, e: e0 } = outRange(item);
   const total = outDuration();
+  // the rest of the selection moves by the same amount, kept inside the video
+  const others = selectedTexts().filter((t) => t !== item).map((t) => ({ t, ...outRange(t) }));
+  const minShift = -Math.min(s0, ...others.map((o) => o.s));
+  const maxShift = total - Math.max(e0, ...others.map((o) => o.e));
   bar.setPointerCapture(e.pointerId);
 
   const move = (ev) => {
@@ -602,8 +620,9 @@ function dragBar(e, item, bar) {
       const b = snapTarget(s + len);
       if (a !== null && (b === null || Math.abs(a - s) <= Math.abs(b - s - len))) { s = a; snapped = a; }
       else if (b !== null) { s = b - len; snapped = b; }
-      s = clamp(s, 0, total - len);
+      s = clamp(s, s0 + minShift, s0 + maxShift);
       en = s + len;
+      for (const o of others) setOutRange(o.t, o.s + (s - s0), o.e + (s - s0));
     } else if (mode === 'l') {
       s = clamp(s0 + dt, 0, e0 - MIN_LEN);
       const a = snapTarget(s);
@@ -653,9 +672,11 @@ function onBarKey(e, item) {
   if (dir && (e.ctrlKey || e.metaKey)) {
     setOutRange(item, s, clamp(en + dir * step, s + MIN_LEN, total));
   } else if (dir) {
-    const len = en - s;
-    const ns = clamp(s + dir * step, 0, total - len);
-    setOutRange(item, ns, ns + len);
+    // arrows move the whole selection, kept inside the video
+    const all = selectedTexts().includes(item) ? selectedTexts() : [item];
+    const ranges = all.map((t) => ({ t, ...outRange(t) }));
+    const shift = clamp(dir * step, -Math.min(...ranges.map((r) => r.s)), total - Math.max(...ranges.map((r) => r.e)));
+    for (const r of ranges) setOutRange(r.t, r.s + shift, r.e + shift);
   } else if (e.key === '[') {
     setOutRange(item, clamp(o, 0, en - MIN_LEN), en);
   } else if (e.key === ']') {

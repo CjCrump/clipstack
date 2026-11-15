@@ -88,7 +88,9 @@ export const state = {
   // overlapping. Starts as one piece; Split cuts one in two, Delete removes one
   // (that part of the clip is skipped), and each piece has its own speed.
   clips: [], // { id, start, end, rate }
-  selected: null, // { type: 'text' | 'clip', id }
+  selected: null, // { type: 'text' | 'clip', id }: the main selection, shown in Properties
+  multi: [], // ids of other texts/emoji selected with it (Ctrl/Shift + click, Ctrl+A)
+  // a text/emoji with item.group set belongs to that group: selecting one selects them all
   exporting: false,
 };
 
@@ -123,6 +125,81 @@ export function getSelected() {
   if (!s) return null;
   const list = s.type === 'text' ? state.texts : state.clips;
   return list.find((i) => i.id === s.id) || null;
+}
+
+// Every text/emoji in the selection: the main one, the extra ones, and everything
+// grouped with any of them. The main one comes first.
+export function selectedTexts() {
+  const ids = new Set();
+  if (state.selected?.type === 'text') ids.add(state.selected.id);
+  for (const id of state.multi) ids.add(id);
+  const picked = state.texts.filter((t) => ids.has(t.id));
+  const groups = new Set(picked.map((t) => t.group).filter(Boolean));
+  const all = state.texts.filter((t) => ids.has(t.id) || (t.group && groups.has(t.group)));
+  const main = all.find((t) => t.id === state.selected?.id);
+  return main ? [main, ...all.filter((t) => t !== main)] : all;
+}
+export const isSelected = (id) => selectedTexts().some((t) => t.id === id);
+
+// Select just this item (clears any multi-selection).
+export function selectOnly(type, id) {
+  state.selected = id == null ? null : { type, id };
+  state.multi = [];
+}
+
+// Ctrl/Shift + click: add a text/emoji to the selection, or take it (and its
+// group) out if it's already in.
+export function toggleSelect(id) {
+  const t = state.texts.find((i) => i.id === id);
+  if (!t) return;
+  if (isSelected(id)) {
+    const drop = new Set(state.texts.filter((i) => i.id === id || (t.group && i.group === t.group)).map((i) => i.id));
+    state.multi = state.multi.filter((m) => !drop.has(m));
+    if (drop.has(state.selected?.id)) {
+      const next = state.multi.shift();
+      state.selected = next != null ? { type: 'text', id: next } : null;
+    }
+    return;
+  }
+  if (state.selected?.type === 'text') state.multi.push(id);
+  else state.selected = { type: 'text', id };
+}
+
+// Make an already-selected item the main one (Properties shows it, its corner
+// handle scales the group) without dropping the rest of the selection.
+export function makeMain(id) {
+  if (state.selected?.type === 'text' && state.selected.id !== id) {
+    state.multi = [...state.multi.filter((m) => m !== id), state.selected.id];
+  }
+  state.selected = { type: 'text', id };
+}
+
+// ---- moving and scaling a selection together ----
+// Drags take a snapshot when they start, then apply one move or scale to all of it.
+export const snapshotItems = (items) => items.map((it) => ({ it, x: it.x, y: it.y, size: it.size }));
+
+export function moveItems(snap, dx, dy) {
+  for (const s of snap) {
+    s.it.x = clamp(s.x + dx, 0, state.srcW);
+    s.it.y = clamp(s.y + dy, 0, state.srcH);
+  }
+}
+
+// Scale sizes and spacing by f around `anchor` (a footage point), so a group
+// grows or shrinks as one. f is limited so no item goes past the size limits.
+export function scaleItems(snap, anchor, f) {
+  let lo = 0;
+  let hi = Infinity;
+  for (const s of snap) {
+    lo = Math.max(lo, MIN_SIZE / s.size);
+    hi = Math.min(hi, MAX_SIZE / s.size);
+  }
+  const k = clamp(f, lo, hi);
+  for (const s of snap) {
+    s.it.size = s.size * k;
+    s.it.x = clamp(anchor.x + (s.x - anchor.x) * k, 0, state.srcW);
+    s.it.y = clamp(anchor.y + (s.y - anchor.y) * k, 0, state.srcH);
+  }
 }
 
 // ---- clip pieces and time ----
