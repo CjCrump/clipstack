@@ -1,0 +1,20 @@
+Third-party code in this folder
+===============================
+
+mediabunny.min.mjs
+  Mediabunny v1.66.0 by Vanilagy - https://github.com/Vanilagy/mediabunny
+  License: Mozilla Public License 2.0 (LICENSE-MPL-2.0.txt)
+  Source: npm package "mediabunny", dist/bundles/mediabunny.min.mjs (unmodified)
+
+mediabunny-aac-encoder.min.mjs
+  @mediabunny/aac-encoder v1.66.0 by Vanilagy - https://github.com/Vanilagy/mediabunny
+  License: Mozilla Public License 2.0 (LICENSE-MPL-2.0.txt)
+  Source: npm package "@mediabunny/aac-encoder", dist/bundles/mediabunny-aac-encoder.min.mjs
+  MODIFIED: the bare import specifier "mediabunny" was changed to "./mediabunny.min.mjs"
+  so the file loads in the browser without a bundler. No other changes.
+  Contains a WebAssembly build of FFmpeg's AAC encoder, licensed LGPL v2.1+
+  (LICENSE-FFmpeg.md). FFmpeg source: https://ffmpeg.org/download.html
+  Build script: https://github.com/Vanilagy/mediabunny/tree/main/packages/aac-encoder
+
+Updating: npm pack both packages at the same version, copy the two .min.mjs bundles
+here, and re-apply the import change above.
