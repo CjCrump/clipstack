@@ -1,0 +1,9 @@
+Bangers (Regular) - Copyright 2010 The Bangers Project Authors
+https://github.com/googlefonts/bangers
+License: SIL Open Font License 1.1 (OFL.txt)
+
+Source: npm package @fontsource/bangers 5.3.0 (latin, latin-ext and vietnamese
+subsets). The three subsets were merged into one font with fontTools:
+  Bangers-Regular.ttf   used by the ffmpeg export (drawtext needs a TTF)
+  Bangers-Regular.woff2 used by the web page (same font, compressed)
+The font is not renamed or modified beyond merging the subsets.

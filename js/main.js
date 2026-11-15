@@ -11,7 +11,7 @@ import { buildFilter, buildCommand } from './exportFfmpeg.js';
 const $ = (id) => document.getElementById(id);
 const video = $('video');
 const canvas = $('preview');
-const FONT_KEY = 'clipStacker.fontPath';
+const FONT_FILE = 'Bangers-Regular.ttf'; // shipped in fonts/, also handed to ffmpeg
 let sourceFile = null; // the loaded clip; the MP4 exporter decodes it directly
 
 // default crops are tuned for a 1920x1080 Halo capture with the cam bottom-left
@@ -23,11 +23,8 @@ initPreview(canvas, video);
 initTimeline($('timeline'), video);
 initPanel($('panel'));
 
-// ---- font path setting (only used by the ffmpeg command) ----
-const fontInput = $('fontPath');
-fontInput.value = localStorage.getItem(FONT_KEY) || 'C:/Windows/Fonts/Bangers-Regular.ttf';
-fontInput.addEventListener('change', () => localStorage.setItem(FONT_KEY, fontInput.value.trim()));
-document.fonts.load('100px Bangers');
+// Bangers ships with the app (fonts/), so every visitor gets the same text.
+const fontReady = document.fonts.load('100px Bangers');
 
 // ---- loading a clip ----
 $('fileInput').addEventListener('change', (e) => {
@@ -126,6 +123,7 @@ $('exportBrowser').addEventListener('click', async () => {
   state.exporting = true;
   const started = performance.now();
   try {
+    await fontReady; // never bake a fallback font into the video
     const blob = await exportMp4({
       file: sourceFile,
       signal: controller.signal,
@@ -134,11 +132,7 @@ $('exportBrowser').addEventListener('click', async () => {
         $('exportLabel').textContent = label;
       },
     });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `${state.fileName.replace(/\.[^.]+$/, '')}_vertical.mp4`;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
+    download(blob, `${state.fileName.replace(/\.[^.]+$/, '')}_vertical.mp4`);
     const secs = ((performance.now() - started) / 1000).toFixed(1);
     openModal('Done', `<p>Your MP4 downloaded (${(blob.size / 1e6).toFixed(1)} MB, took ${secs}s).</p>`);
   } catch (err) {
@@ -154,20 +148,27 @@ $('exportBrowser').addEventListener('click', async () => {
   }
 });
 
-$('exportFfmpeg').addEventListener('click', () => {
-  const fontPath = fontInput.value.trim();
-  const blob = new Blob([buildFilter(fontPath)], { type: 'text/plain' });
+function download(blob, name) {
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = 'filter.txt';
+  a.download = name;
   a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
+}
+
+$('exportFfmpeg').addEventListener('click', async () => {
+  download(new Blob([buildFilter(FONT_FILE)], { type: 'text/plain' }), 'filter.txt');
+  const font = await fetch(`fonts/${FONT_FILE}`).then((r) => r.blob());
+  download(font, FONT_FILE);
 
   const cmd = buildCommand();
   openModal('ffmpeg command', `
-    <p>Downloaded <b>filter.txt</b>. Put it in the same folder as <b>${state.fileName}</b>, open a terminal there, and run:</p>
+    <p>Downloaded <b>filter.txt</b> and <b>${FONT_FILE}</b>. Put both in the same folder as
+      <b id="cmdFile"></b>, open a terminal there, and run:</p>
     <pre id="cmd"></pre>
-    <p class="muted">Needs ffmpeg 7 or newer. Font file: ${fontPath}</p>
+    <p class="muted">Needs ffmpeg 7 or newer.</p>
     <button class="btn" id="copyCmd">Copy command</button>`);
+  $('cmdFile').textContent = state.fileName;
   $('cmd').textContent = cmd;
   $('copyCmd').addEventListener('click', () => navigator.clipboard.writeText(cmd));
 });

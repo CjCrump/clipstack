@@ -1,3 +1,13 @@
+/* Bangers ships with the app (fonts/NOTICE.txt). block: wait for it rather than
+   flash a fallback, since the preview canvas draws text with it. */
+@font-face {
+  font-family: 'Bangers';
+  src: url('../fonts/Bangers-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+}
+
 :root {
   --bg: #121317;
   --pane: #1b1d23;
