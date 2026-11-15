@@ -260,23 +260,22 @@ body.dragging .source-wrap { outline: 3px dashed var(--accent); outline-offset: 
 .tl-flag {
   position: absolute;
   z-index: 6;
-  width: 14px;
-  margin-left: -7px; /* centred on the line */
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  cursor: ew-resize;
+  width: 14px; /* width, left and the stem are set in whole device pixels by placeFlag() */
+  pointer-events: none; /* only the flag itself grabs; clicks pass through the line to the rows */
   touch-action: none;
 }
 .tl-flag[hidden] { display: none; }
-.tl-flag-head {
-  flex: none;
-  width: 14px;
+.tl-flag-head { pointer-events: auto; cursor: ew-resize; }
+.tl-flag-head { /* point at 50% = the middle of the stem below it */
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
   height: 14px;
   background: #ff3b3b;
   clip-path: polygon(0 0, 100% 0, 100% 55%, 50% 100%, 0 55%);
 }
-.tl-flag-stem { flex: 1; width: 2px; background: #ff3b3b; }
+.tl-flag-stem { position: absolute; left: var(--stem-x, 6px); top: 10px; bottom: 0; width: var(--stem-w, 2px); background: #ff3b3b; }
 .tl-flag:hover .tl-flag-head, .tl-flag:hover .tl-flag-stem { background: #ff6262; }
 .tl-content { position: relative; width: calc(var(--label-w) + var(--tl-w, 100%)); min-width: 100%; }
 
@@ -340,7 +339,7 @@ body.dragging .source-wrap { outline: 3px dashed var(--accent); outline-offset: 
 }
 .tl-snap { position: absolute; top: 0; bottom: 0; width: 2px; background: #ffe14d; }
 .tl-snap[hidden] { display: none; }
-.tl-playhead { position: absolute; top: 0; bottom: 0; width: 2px; background: #ff3b3b; }
+.tl-playhead { display: none; } /* the line is drawn by the flag's stem (#tlFlag), so they can't misalign */
 
 /* modal */
 .modal {

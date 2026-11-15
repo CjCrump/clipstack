@@ -41,7 +41,7 @@ const SCALES = [
 ];
 const MAJOR_MIN_PX = 80; // room for a label
 
-let root, video, playhead, flag, snapLine, ruler, rulerCanvas, content, topBar;
+let root, video, playhead, phLayer, flag, snapLine, ruler, rulerCanvas, content, topBar;
 let lastAriaT = -1;
 let structureKey = '';
 let zoom = 1;
@@ -144,28 +144,28 @@ function syncOverview() {
 // ---- the playhead flag ----
 function initFlag() {
   flag = document.getElementById('tlFlag');
-  flag.addEventListener('pointerdown', (e) => {
+  const grip = flag.querySelector('.tl-flag-head'); // the stem lets clicks through to the rows
+  grip.addEventListener('pointerdown', (e) => {
     if (!state.duration) return;
     e.preventDefault();
     e.stopPropagation();
-    flag.setPointerCapture(e.pointerId);
+    grip.setPointerCapture(e.pointerId);
     const seek = (ev) => {
       const trackLeft = root.getBoundingClientRect().left + labelW();
       seekOut(onFrame((ev.clientX - trackLeft + root.scrollLeft) / pxPerSec()));
-      keepPlayheadInView(); // dragging past the edge scrolls along
     };
     const up = () => {
-      flag.removeEventListener('pointermove', seek);
-      flag.removeEventListener('pointerup', up);
+      grip.removeEventListener('pointermove', seek);
+      grip.removeEventListener('pointerup', up);
     };
-    flag.addEventListener('pointermove', seek);
-    flag.addEventListener('pointerup', up);
+    grip.addEventListener('pointermove', seek);
+    grip.addEventListener('pointerup', up);
   });
 }
 
-// Puts the flag over the line: same x on screen, stem reaching down to the
-// top of the ruler where the line starts. Hidden while the playhead is scrolled
-// out of view.
+// The playhead is this one element: the flag over the bar and its stem, which runs
+// down through the ruler and every visible row as the red line. Being one element,
+// the point and the line can't drift apart. Hidden while scrolled out of view.
 function placeFlag() {
   if (!flag) return;
   const pane = flag.parentElement; // the timeline pane (offsetParent is null while hidden)
@@ -177,9 +177,14 @@ function placeFlag() {
   const pr = pane.getBoundingClientRect();
   const tr = root.getBoundingClientRect();
   const br = topBar.getBoundingClientRect();
-  flag.style.left = `${tr.left - pr.left + labelW() + x + 1}px`; // +1: centre of the 2px line
-  flag.style.top = `${br.top - pr.top - 3}px`;
-  flag.style.height = `${tr.top - br.top + 3}px`;
+  // the stem sits `inset` into the flag, so its left edge lands exactly on the line's
+  const sz = playheadSizes();
+  flag.style.left = `${playheadPageX().x - pr.left - sz.inset}px`;
+  flag.style.width = `${sz.head}px`;
+  flag.style.setProperty('--stem-w', `${sz.line}px`);
+  flag.style.setProperty('--stem-x', `${sz.inset}px`);
+  flag.style.top = `${Math.round(br.top - pr.top - 3)}px`;
+  flag.style.height = `${Math.round(tr.bottom - br.top + 3)}px`; // down to the bottom of the timeline
 }
 
 // If the playhead has gone off screen, scroll so it's back in view.
@@ -233,6 +238,7 @@ export function zoomBy(factor, clientX) {
   structureKey = ''; // ticks depend on zoom
   render();
   root.scrollLeft = Math.max(0, anchorOut * pxPerSec() - screenX);
+  keepPlayheadInView(); // zooming from the keyboard with the playhead off screen
 }
 export function zoomFit() {
   zoom = 1;
@@ -241,10 +247,33 @@ export function zoomFit() {
   root.scrollLeft = 0;
 }
 
+// Line, stem and flag sizes in whole device pixels for this screen's scaling,
+// with the flag's extra width split evenly so its point is dead centre on the line.
+// (At 125% scaling "2px" would be 2.5 real pixels and drawn 2 or 3 wide.)
+function playheadSizes() {
+  const dpr = window.devicePixelRatio || 1;
+  const line = Math.max(2, Math.round(2 * dpr));
+  let head = Math.round(14 * dpr);
+  if ((head - line) % 2) head += 1;
+  return { line: line / dpr, head: head / dpr, inset: (head - line) / 2 / dpr };
+}
+
+// The playhead's left edge on screen, snapped to a whole device pixel. The line
+// and the flag are both placed from this one number, so they can't drift apart.
+function playheadPageX() {
+  const dpr = window.devicePixelRatio || 1;
+  // where 0s really is on screen, read from the playhead's own layer (scroll positions
+  // get rounded at non-100% scaling, so working it out from scrollLeft can be a hair off)
+  const origin = phLayer.getBoundingClientRect().left;
+  return { origin, x: Math.round((origin + outNow() * pxPerSec()) * dpr) / dpr };
+}
+
 export function updatePlayhead(t) {
   if (!playhead) return;
   const x = srcToOut(t) * pxPerSec();
-  playhead.style.left = `${x}px`;
+  const snap = playheadPageX();
+  playhead.style.left = `${snap.x - snap.origin}px`;
+  playhead.style.width = `${playheadSizes().line}px`;
   placeFlag();
   syncOverview();
   // while playing zoomed in, page the view along with the playhead
@@ -294,6 +323,7 @@ function build() {
 
   const layer = document.createElement('div');
   layer.className = 'tl-playhead-layer';
+  phLayer = layer;
   playhead = document.createElement('div');
   playhead.className = 'tl-playhead';
   snapLine = document.createElement('div');
@@ -501,6 +531,7 @@ const onFrame = (o) => Math.round(o / FRAME) * FRAME;
 
 function seekOut(o) {
   video.currentTime = clamp(outToSrc(clamp(o, 0, outDuration()), true), 0, state.duration);
+  keepPlayheadInView(); // wherever the playhead goes, the view goes with it
 }
 
 function scrub(e, trackEl) {
