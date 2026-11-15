@@ -72,6 +72,22 @@ export function srcToOut(t) {
   return out + (t - cur);
 }
 
+// Output time -> source time (the reverse of srcToOut).
+export function outToSrc(o) {
+  let out = 0;
+  let cur = 0;
+  for (const s of sortedSpeeds()) {
+    const gap = s.start - cur;
+    if (o <= out + gap) return cur + (o - out);
+    out += gap;
+    const segOut = (s.end - s.start) / s.rate;
+    if (o <= out + segOut) return s.start + (o - out) * s.rate;
+    out += segOut;
+    cur = s.end;
+  }
+  return cur + (o - out);
+}
+
 // Every stretch of the clip with its playback rate, gaps filled with 1x.
 export function buildSegments() {
   const segs = [];

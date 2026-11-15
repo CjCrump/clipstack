@@ -5,14 +5,14 @@ import { initCropBoxes, layout } from './cropBoxes.js';
 import { initPreview, drawPreview } from './preview.js';
 import { initTimeline, updatePlayhead } from './timeline.js';
 import { initPanel, deleteSelected } from './panel.js';
-import { ensureAudio } from './audio.js';
-import { exportBrowser } from './exportBrowser.js';
+import { exportMp4, ExportError } from './exportMp4.js';
 import { buildFilter, buildCommand } from './exportFfmpeg.js';
 
 const $ = (id) => document.getElementById(id);
 const video = $('video');
 const canvas = $('preview');
 const FONT_KEY = 'clipStacker.fontPath';
+let sourceFile = null; // the loaded clip; the MP4 exporter decodes it directly
 
 // default crops are tuned for a 1920x1080 Halo capture with the cam bottom-left
 const DEFAULT_A = { x: 542, y: 41, w: 835 };
@@ -34,6 +34,7 @@ $('fileInput').addEventListener('change', (e) => {
   const file = e.target.files[0];
   if (!file) return;
   state.fileName = file.name;
+  sourceFile = file;
   video.src = URL.createObjectURL(file);
 });
 
@@ -84,7 +85,6 @@ $('addSpeed').addEventListener('click', () => {
 
 // ---- playback ----
 function togglePlay() {
-  ensureAudio(video);
   if (video.paused) video.play();
   else video.pause();
 }
@@ -114,13 +114,44 @@ $('modalClose').addEventListener('click', () => { modal.hidden = true; });
 
 // ---- exports ----
 $('exportBrowser').addEventListener('click', async () => {
-  openModal('Exporting…', '<p class="muted">Keep this tab in front while it plays through.</p><div class="progress"><div id="bar"></div></div>', false);
-  const ext = await exportBrowser({
-    video,
-    canvas,
-    onProgress: (p) => { $('bar').style.width = `${Math.min(100, p * 100)}%`; },
-  });
-  openModal('Done', `<p>Your ${ext.toUpperCase()} downloaded.${ext === 'webm' ? ' This browser can\'t record MP4, so it saved WebM instead.' : ''}</p>`);
+  if (!sourceFile) return;
+  video.pause();
+  const controller = new AbortController();
+  openModal('Exporting MP4', `
+    <p id="exportLabel" class="muted">Starting…</p>
+    <div class="progress"><div id="bar"></div></div>
+    <div class="modal-actions"><button class="btn" id="cancelExport">Cancel</button></div>`, false);
+  $('cancelExport').addEventListener('click', () => controller.abort());
+
+  state.exporting = true;
+  const started = performance.now();
+  try {
+    const blob = await exportMp4({
+      file: sourceFile,
+      signal: controller.signal,
+      onProgress: (p, label) => {
+        $('bar').style.width = `${Math.min(100, p * 100)}%`;
+        $('exportLabel').textContent = label;
+      },
+    });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `${state.fileName.replace(/\.[^.]+$/, '')}_vertical.mp4`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
+    const secs = ((performance.now() - started) / 1000).toFixed(1);
+    openModal('Done', `<p>Your MP4 downloaded (${(blob.size / 1e6).toFixed(1)} MB, took ${secs}s).</p>`);
+  } catch (err) {
+    if (err.name === 'AbortError') {
+      modal.hidden = true;
+    } else {
+      console.error(err);
+      openModal('Export failed', '<p id="exportError"></p>');
+      $('exportError').textContent = err instanceof ExportError ? err.message : `Something went wrong: ${err.message}`;
+    }
+  } finally {
+    state.exporting = false;
+  }
 });
 
 $('exportFfmpeg').addEventListener('click', () => {

@@ -1,11 +1,9 @@
 // 9:16 preview canvas: draws both crops stacked, then text layers.
 // Text can be dragged to move it, or resized from its corner handle.
 
-import {
-  state, emit, OUT_W, OUT_H, box, slotH, boxH, srcToOut, popScale, popAlpha, clamp,
-} from './state.js';
+import { state, emit, OUT_W, OUT_H, slotH, clamp } from './state.js';
+import { FONT, drawComposite, drawText, textVisual } from './render.js';
 
-const FONT = 'Bangers, Impact, sans-serif';
 const HANDLE = 44; // handle size in canvas px
 
 let canvas, ctx, video;
@@ -17,33 +15,20 @@ export function initPreview(c, v) {
   canvas.addEventListener('pointerdown', onPointerDown);
 }
 
+const drawFromVideo = (c, ...args) => c.drawImage(video, ...args);
+
 export function drawPreview() {
-  ctx.fillStyle = '#000';
-  ctx.fillRect(0, 0, OUT_W, OUT_H);
-
-  if (video.readyState >= 2) {
-    const topH = Math.round(slotH('A'));
-    const a = box('A');
-    const b = box('B');
-    ctx.drawImage(video, a.x, a.y, a.w, boxH('A'), 0, 0, OUT_W, topH);
-    ctx.drawImage(video, b.x, b.y, b.w, boxH('B'), 0, topH, OUT_W, OUT_H - topH);
-  }
-
   const t = video.currentTime;
+  drawComposite(ctx, video.readyState >= 2 ? drawFromVideo : null, t);
+
+  // editor-only overlays
   const sel = state.selected?.type === 'text' ? state.selected.id : null;
-
-  for (const tx of state.texts) {
-    const v = textVisual(tx, t);
-    if (v) drawText(tx, v.scale, v.alpha);
-    else if (tx.id === sel && !state.exporting) drawText(tx, 1, 0.35); // ghost so it can be placed
+  const tx = sel && state.texts.find((i) => i.id === sel);
+  if (tx) {
+    if (!textVisual(tx, t)) drawText(ctx, tx, 1, 0.35); // ghost so it can be placed
+    drawSelection(tx);
   }
-
-  if (sel && !state.exporting) {
-    const tx = state.texts.find((i) => i.id === sel);
-    if (tx) drawSelection(tx);
-  }
-
-  if (!state.exporting) drawGuides();
+  drawGuides();
 }
 
 // ---- snap guides for text: frame centre line + centre of each section ----
@@ -76,30 +61,6 @@ function drawGuides() {
   ctx.fillStyle = '#ff3ec8';
   if (activeGuides.x !== null) ctx.fillRect(activeGuides.x - 2, 0, 4, OUT_H);
   if (activeGuides.y !== null) ctx.fillRect(0, activeGuides.y - 2, OUT_W, 4);
-  ctx.restore();
-}
-
-function textVisual(tx, t) {
-  if (t < tx.start || t > tx.end) return null;
-  const t0 = srcToOut(tx.start);
-  const lt = srcToOut(t) - t0;
-  const dur = srcToOut(tx.end) - t0;
-  return { scale: tx.anim === 'pop' ? popScale(lt) : 1, alpha: popAlpha(lt, dur) };
-}
-
-function drawText(tx, scale, alpha) {
-  const size = tx.size * scale;
-  ctx.save();
-  ctx.globalAlpha = alpha;
-  ctx.font = `${size}px ${FONT}`;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.lineJoin = 'round';
-  ctx.lineWidth = size / 8; // matches ffmpeg borderw = size/16 per side
-  ctx.strokeStyle = '#000';
-  ctx.strokeText(tx.text, tx.x, tx.y);
-  ctx.fillStyle = '#fff';
-  ctx.fillText(tx.text, tx.x, tx.y);
   ctx.restore();
 }
 
