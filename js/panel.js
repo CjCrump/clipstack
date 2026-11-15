@@ -2,6 +2,7 @@
 // Rebuilt only when the selection changes so typing never loses focus.
 
 import { state, emit, subscribe, getSelected } from './state.js';
+import { MAX_TEXT } from './exportFfmpeg.js';
 
 const RATES = [1.5, 2, 3, 4, 8];
 
@@ -31,7 +32,7 @@ function build(item) {
   }
   if (state.selected.type === 'text') {
     root.innerHTML = `
-      <label>Text <textarea data-k="text" rows="2"></textarea></label>
+      <label>Text <textarea data-k="text" rows="2" maxlength="${MAX_TEXT}"></textarea></label>
       <label>Size <input data-k="size" type="number" min="30" max="400" step="2"></label>
       <div class="row">
         <label>Start (s) <input data-k="start" type="number" step="0.05" min="0"></label>
@@ -59,7 +60,9 @@ function build(item) {
       const numeric = k !== 'text' && k !== 'anim';
       const v = numeric ? parseFloat(input.value) : input.value;
       if (numeric && Number.isNaN(v)) return;
-      it[k] = v;
+      it[k] = k === 'text' ? v.slice(0, MAX_TEXT) : v;
+      if (k === 'start' || k === 'end') it[k] = Math.min(state.duration, Math.max(0, it[k]));
+      if (k === 'size') it.size = Math.min(400, Math.max(30, it.size));
       if (it.end <= it.start) it.end = it.start + 0.1;
       emit();
     });

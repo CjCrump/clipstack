@@ -3,16 +3,19 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Clip Stacker</title>
+  <title>Clipstack: split-screen vertical clip editor</title>
+  <meta name="description" content="Free, open source editor that turns a 16:9 gaming clip into a 9:16 split-screen vertical video. Runs entirely in your browser.">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="css/styles.css">
 </head>
 <body>
   <header class="toolbar">
-    <strong class="brand">Clip Stacker</strong>
+    <strong class="brand">Clipstack</strong>
     <label class="btn">Load clip<input type="file" id="fileInput" accept="video/*" hidden></label>
     <button id="addText" class="btn" disabled>+ Text</button>
     <button id="addSpeed" class="btn" disabled>+ Speed</button>
     <span class="spacer"></span>
+    <a class="toolbar-link" href="security.html">Security</a>
     <button id="exportFfmpeg" class="btn" disabled>ffmpeg command</button>
     <button id="exportBrowser" class="btn primary" disabled>Export MP4</button>
   </header>

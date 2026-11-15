@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Security | Clipstack</title>
+  <meta name="description" content="How Clipstack handles your video, what security rules the site uses, and how to report a problem.">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body class="doc">
+  <header class="toolbar">
+    <a class="brand" href="./">Clipstack</a>
+    <span class="spacer"></span>
+    <a class="toolbar-link" href="./">Back to the editor</a>
+  </header>
+
+  <main class="doc-main">
+    <h1>Security</h1>
+    <p class="muted">Last updated November 14, 2026</p>
+
+    <h2>Your video stays on your computer</h2>
+    <ul>
+      <li>Clipstack runs entirely in your browser. Your clip is read from your disk and never uploaded.</li>
+      <li>Exports are made in your browser and downloaded straight to you.</li>
+      <li>No accounts, cookies, analytics, ads or tracking.</li>
+      <li>The page makes no requests to any other website. Every file it uses is served from this site.</li>
+      <li>Nothing is saved in your browser yet. Close the tab and your edit is gone.</li>
+    </ul>
+
+    <h2>Security rules the site sends</h2>
+    <p>Every page is served with these response headers:</p>
+    <ul>
+      <li><b>Content-Security-Policy</b>: the browser may only run scripts, styles, fonts and images from this site, and may not contact any other server. Two exceptions, both needed by the bundled AAC audio encoder:
+        <code>wasm-unsafe-eval</code> lets it run WebAssembly (compiled code that runs in the browser's sandbox), and
+        <code>worker-src blob:</code> lets it start its background worker from memory. Neither allows code from another site.</li>
+      <li><b>X-Frame-Options</b> and <code>frame-ancestors 'none'</code>: other sites can't embed Clipstack in a frame to trick you into clicking.</li>
+      <li><b>X-Content-Type-Options: nosniff</b>: files are only treated as the type they're served as.</li>
+      <li><b>Referrer-Policy: no-referrer</b>: links you follow don't tell the next site where you came from.</li>
+      <li><b>Permissions-Policy</b>: camera, microphone, location, USB and payments are switched off.</li>
+      <li><b>Strict-Transport-Security</b>: browsers only ever load this site over HTTPS.</li>
+    </ul>
+
+    <h2>Third-party code</h2>
+    <p>All of it is copied into the project and served from here, never from a CDN. Versions and licenses are in the repository.</p>
+    <ul>
+      <li><b>Mediabunny</b> 1.66.0 (MPL-2.0): reads your clip and writes the MP4.</li>
+      <li><b>Mediabunny AAC encoder</b> 1.66.0 (MPL-2.0), containing FFmpeg's AAC encoder (LGPL): used when your browser has no built-in AAC encoder, such as Firefox.</li>
+      <li><b>Bangers</b> font (SIL Open Font License).</li>
+    </ul>
+
+    <h2>The ffmpeg command</h2>
+    <p>The ffmpeg export gives you a command to run on your own computer. Read it before you run it. Clipstack builds it so it can't do anything except make your video:</p>
+    <ul>
+      <li>All editing instructions go in <code>filter.txt</code>, not in the command itself.</li>
+      <li>Text you type is limited to 60 characters, and quotes, backslashes and control characters are removed.</li>
+      <li>If your clip's file name has characters a terminal could treat as code, the command uses a safe name and asks you to rename the file first.</li>
+    </ul>
+
+    <h2>Report a problem</h2>
+    <p>Found a security issue? Please report it privately through
+      <a href="https://github.com/CjCrump/clipstack/security/advisories/new" rel="noopener">GitHub's private vulnerability reporting</a>
+      rather than opening a public issue. Machine-readable contact details are in
+      <a href=".well-known/security.txt">security.txt</a>.</p>
+  </main>
+</body>
+</html>

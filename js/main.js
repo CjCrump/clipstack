@@ -6,7 +6,7 @@ import { initPreview, drawPreview } from './preview.js';
 import { initTimeline, updatePlayhead } from './timeline.js';
 import { initPanel, deleteSelected } from './panel.js';
 import { exportMp4, ExportError } from './exportMp4.js';
-import { buildFilter, buildCommand } from './exportFfmpeg.js';
+import { buildFilter, buildCommand, safeFileName } from './exportFfmpeg.js';
 import { initLoader, canExportInBrowser } from './loader.js';
 
 const $ = (id) => document.getElementById(id);
@@ -180,13 +180,19 @@ $('exportFfmpeg').addEventListener('click', async () => {
   download(font, FONT_FILE);
 
   const cmd = buildCommand();
+  const safeName = safeFileName(state.fileName);
   openModal('ffmpeg command', `
     <p>Downloaded <b>filter.txt</b> and <b>${FONT_FILE}</b>. Put both in the same folder as
       <b id="cmdFile"></b>, open a terminal there, and run:</p>
+    <p id="renameNote" class="notice info" hidden></p>
     <pre id="cmd"></pre>
     <p class="muted">Needs ffmpeg 7 or newer.</p>
     <button class="btn" id="copyCmd">Copy command</button>`);
   $('cmdFile').textContent = state.fileName;
+  if (safeName !== state.fileName) {
+    $('renameNote').hidden = false;
+    $('renameNote').textContent = `First rename your clip to "${safeName}". Its name has characters a terminal could treat as code.`;
+  }
   $('cmd').textContent = cmd;
   $('copyCmd').addEventListener('click', () => navigator.clipboard.writeText(cmd));
 });

@@ -77,6 +77,19 @@ input, textarea, select {
   font: inherit;
 }
 
+.toolbar-link { color: var(--muted); text-decoration: none; padding: 6px 8px; }
+.toolbar-link:hover { color: var(--text); }
+a.brand { color: var(--text); text-decoration: none; }
+
+/* document pages (security.html) */
+body.doc { display: block; height: auto; min-height: 100vh; }
+.doc-main { max-width: 760px; margin: 0 auto; padding: 24px 20px 64px; font-size: 15px; line-height: 1.6; }
+.doc-main h1 { font-size: 28px; margin: 0 0 4px; }
+.doc-main h2 { font-size: 18px; margin: 28px 0 8px; }
+.doc-main li { margin: 4px 0; }
+.doc-main a { color: #a998ff; }
+.doc-main code { background: #0f1014; padding: 1px 5px; border-radius: 4px; }
+
 /* notice bar (errors and info) */
 .notice {
   padding: 8px 12px;
