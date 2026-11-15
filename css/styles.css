@@ -192,6 +192,9 @@ body.dragging .source-wrap { outline: 3px dashed var(--accent); outline-offset: 
   padding: 12px;
   display: grid;
   place-items: center;
+  /* one cell exactly the panel's size, so the preview's max-height: 100% has a
+     real height to shrink to (an auto row grows to fit it and it overflows) */
+  grid-template: minmax(0, 1fr) / minmax(0, 1fr);
 }
 #preview {
   width: auto;
