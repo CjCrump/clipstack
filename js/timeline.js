@@ -57,6 +57,8 @@ export function initTimeline(el, v, top) {
   subscribe(render);
   new ResizeObserver(() => { structureKey = ''; render(); }).observe(root);
   root.addEventListener('wheel', onWheel, { passive: false });
+  video.addEventListener('seeked', onSeeked);
+  video.addEventListener('play', () => { pendingSeek = null; });
   topBar.addEventListener('wheel', onWheel, { passive: false });
   initTopBar();
 }
@@ -225,7 +227,30 @@ function onWheel(e) {
 const labelW = () => parseFloat(getComputedStyle(root).getPropertyValue('--label-w')) || 90;
 const viewW = () => Math.max(50, root.clientWidth - labelW());
 const pxPerSec = () => (state.duration ? (viewW() * zoom) / Math.max(0.1, outDuration()) : 1);
-const outNow = () => srcToOut(video.currentTime);
+// Scrubbing: only one seek runs at a time. Setting currentTime again before a seek
+// lands cancels it, so a fast drag never showed a new frame until it stopped. Now
+// the newest spot waits in `pendingSeek` and goes as soon as the current seek
+// lands, so the preview keeps showing real frames while you drag. The playhead
+// follows the pointer right away either way.
+let pendingSeek = null;
+function seekSrc(t) {
+  if (video.seeking) {
+    pendingSeek = t;
+  } else {
+    pendingSeek = null;
+    video.currentTime = t;
+  }
+}
+function onSeeked() {
+  if (pendingSeek === null) return;
+  const t = pendingSeek;
+  pendingSeek = null;
+  if (Math.abs(t - video.currentTime) > 1e-4) video.currentTime = t;
+  else render();
+}
+
+// Where the playhead is: where it's heading while a seek waits, else the video's time.
+const outNow = () => srcToOut(pendingSeek ?? video.currentTime);
 
 // ---- zoom ----
 // Zooming stops once a single frame is FRAME_PX_AT_MAX wide, whatever the clip length.
@@ -271,8 +296,12 @@ function playheadPageX() {
   return { origin, x: Math.round((origin + outNow() * pxPerSec()) * dpr) / dpr };
 }
 
-export function updatePlayhead(t) {
+// The source time the playhead shows: where a scrub is heading, else the video's time.
+export const playheadTime = () => pendingSeek ?? video.currentTime;
+
+export function updatePlayhead() {
   if (!playhead) return;
+  const t = playheadTime();
   const x = srcToOut(t) * pxPerSec();
   const snap = playheadPageX();
   playhead.style.left = `${snap.x - snap.origin}px`;
@@ -344,7 +373,7 @@ function build() {
   placeFlag();
   const refocus = focusedKey === 'ruler' ? ruler : bars.get(focusedKey);
   refocus?.focus();
-  updatePlayhead(video.currentTime);
+  updatePlayhead();
 }
 
 function row(labelText, cls = '') {
@@ -557,7 +586,8 @@ function layoutBars() {
 const onFrame = (o) => Math.round(o / FRAME) * FRAME;
 
 function seekOut(o) {
-  video.currentTime = clamp(outToSrc(clamp(o, 0, outDuration()), true), 0, state.duration);
+  seekSrc(clamp(outToSrc(clamp(o, 0, outDuration()), true), 0, state.duration));
+  updatePlayhead();
   keepPlayheadInView(); // wherever the playhead goes, the view goes with it
 }
 

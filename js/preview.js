@@ -19,7 +19,16 @@ export function initPreview(c, v) {
   video = v;
   ctx = canvas.getContext('2d');
   canvas.addEventListener('pointerdown', onPointerDown);
-  video.addEventListener('emptied', () => { haveHeld = false; }); // a new clip: don't show the old one's frame
+  video.addEventListener('emptied', () => { haveHeld = false; heldAt = -1; });
+  // grab each frame the moment a seek lands: while scrubbing, the next seek starts
+  // right after, so the per-frame redraw would never see it. (Registered before the
+  // timeline's seeked listener, which starts that next seek.)
+  video.addEventListener('seeked', () => {
+    if (video.readyState >= 2 && video.videoWidth) {
+      holdFrame();
+      drawPreview();
+    }
+  }); // a new clip: don't show the old one's frame
   canvas.addEventListener('keydown', onKey);
 }
 
@@ -52,12 +61,17 @@ const held = document.createElement('canvas');
 const heldCtx = held.getContext('2d');
 let haveHeld = false;
 
+let heldAt = -1; // the video time of the frame in `held`
+
+// Copy the frame only when it's a new one, not on every redraw.
 function holdFrame() {
+  if (haveHeld && video.currentTime === heldAt) return;
   if (held.width !== video.videoWidth || held.height !== video.videoHeight) {
     held.width = video.videoWidth;
     held.height = video.videoHeight;
   }
   heldCtx.drawImage(video, 0, 0);
+  heldAt = video.currentTime;
   haveHeld = true;
 }
 

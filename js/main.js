@@ -4,7 +4,7 @@ import { state, emit, uid, selectedTexts, selectOnly, clampBoxes, rateAt, pieceA
 import { initCropBoxes, layout } from './cropBoxes.js';
 import { initPreview, drawPreview } from './preview.js';
 import { initSourceLayer, drawSourceLayer } from './sourceLayer.js';
-import { initTimeline, updatePlayhead, zoomBy, zoomFit } from './timeline.js';
+import { initTimeline, updatePlayhead, playheadTime, zoomBy, zoomFit } from './timeline.js';
 import { initPanel, deleteSelected } from './panel.js';
 import { exportMp4, ExportError } from './exportMp4.js';
 import { buildFilter, buildCommand, safeFileName } from './exportFfmpeg.js';
@@ -450,8 +450,8 @@ function frame() {
   if (video.playbackRate !== r) video.playbackRate = r;
   drawPreview();
   drawSourceLayer(t);
-  updatePlayhead(t);
-  timeLabel.textContent = `${srcToOut(t).toFixed(2)} / ${outDuration().toFixed(2)}`; // finished-video time
+  updatePlayhead();
+  timeLabel.textContent = `${srcToOut(playheadTime()).toFixed(2)} / ${outDuration().toFixed(2)}`; // finished-video time
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
