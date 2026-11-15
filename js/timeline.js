@@ -19,10 +19,29 @@ import {
 const MIN_LEN = 0.1; // shortest text/emoji, output seconds
 const FRAME = 1 / 30;
 const SNAP_PX = 8;
-const MAX_ZOOM = 60;
-const TICK_STEPS = [0.1, 0.2, 0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300];
+const FRAME_PX_AT_MAX = 40; // fully zoomed in, one frame is this wide
 
-let root, video, playhead, head, snapLine, ruler, content, topBar;
+// Ruler scales, finest first. Each has labelled major ticks, small ticks between
+// them, and sometimes a medium tick halfway. Zooming in walks down this list:
+// 10s with a tick per second, 1s with a tick per tenth, down to one tick per frame.
+const F = FRAME;
+const SCALES = [
+  { major: 2 * F, minor: F },
+  { major: 5 * F, minor: F },
+  { major: 10 * F, minor: F, mid: 5 * F },
+  { major: 0.5, minor: 0.1 },
+  { major: 1, minor: 0.1, mid: 0.5 },
+  { major: 2, minor: 0.2, mid: 1 },
+  { major: 5, minor: 1 },
+  { major: 10, minor: 1, mid: 5 },
+  { major: 30, minor: 5, mid: 15 },
+  { major: 60, minor: 10, mid: 30 },
+  { major: 300, minor: 60 },
+  { major: 600, minor: 60, mid: 300 },
+];
+const MAJOR_MIN_PX = 80; // room for a label
+
+let root, video, playhead, head, snapLine, ruler, rulerCanvas, content, topBar;
 let lastAriaT = -1;
 let structureKey = '';
 let zoom = 1;
@@ -49,7 +68,7 @@ const maxScroll = () => Math.max(0, contentW() - viewW());
 
 function initTopBar() {
   const win = topBar.querySelector('.tl-window');
-  root.addEventListener('scroll', syncOverview);
+  root.addEventListener('scroll', () => { syncOverview(); drawRuler(); });
   new ResizeObserver(syncOverview).observe(topBar);
 
   // drag the view box: scroll
@@ -75,7 +94,7 @@ function initTopBar() {
     e.preventDefault();
     const seek = (ev) => {
       const r = topBar.getBoundingClientRect();
-      seekOut(clamp((ev.clientX - r.left) / r.width, 0, 1) * outDuration());
+      seekOut(onFrame(clamp((ev.clientX - r.left) / r.width, 0, 1) * outDuration()));
       keepPlayheadInView();
     };
     seek(e);
@@ -155,6 +174,8 @@ const pxPerSec = () => (state.duration ? (viewW() * zoom) / Math.max(0.1, outDur
 const outNow = () => srcToOut(video.currentTime);
 
 // ---- zoom ----
+// Zooming stops once a single frame is FRAME_PX_AT_MAX wide, whatever the clip length.
+const maxZoom = () => Math.max(1, (FRAME_PX_AT_MAX / FRAME) / (viewW() / Math.max(0.1, outDuration())));
 // Zoom keeps the point under the mouse (or the playhead) where it was on screen.
 export function zoomBy(factor, clientX) {
   if (!state.duration) return;
@@ -162,7 +183,7 @@ export function zoomBy(factor, clientX) {
     ? outNow()
     : (clientX - root.getBoundingClientRect().left - labelW() + root.scrollLeft) / pxPerSec();
   const screenX = anchorOut * pxPerSec() - root.scrollLeft;
-  zoom = clamp(zoom * factor, 1, MAX_ZOOM);
+  zoom = clamp(zoom * factor, 1, maxZoom());
   structureKey = ''; // ticks depend on zoom
   render();
   root.scrollLeft = Math.max(0, anchorOut * pxPerSec() - screenX);
@@ -237,6 +258,7 @@ function build() {
 
   root.scrollLeft = scroll;
   syncOverview();
+  drawRuler();
   const refocus = focusedKey === 'ruler' ? ruler : bars.get(focusedKey);
   refocus?.focus();
   updatePlayhead(video.currentTime);
@@ -273,17 +295,83 @@ function rulerRow() {
   head.dataset.hint = 'The playhead. Drag it to scrub; the timeline follows when you drag past the edge.';
   track.appendChild(head);
   lastAriaT = -1;
-  const pps = pxPerSec();
-  const step = TICK_STEPS.find((s) => s * pps >= 70) || 600;
-  const total = outDuration();
-  for (let s = 0; s <= total + 1e-6; s += step) {
-    const tick = document.createElement('div');
-    tick.className = 'tl-tick';
-    tick.style.left = `${s * pps}px`;
-    tick.textContent = step < 1 ? `${s.toFixed(1)}s` : `${Math.round(s)}s`;
-    track.appendChild(tick);
-  }
+  // ticks are drawn on a canvas covering just the visible part (see drawRuler)
+  rulerCanvas = document.createElement('canvas');
+  rulerCanvas.className = 'tl-ruler-canvas';
+  rulerCanvas.setAttribute('aria-hidden', 'true');
+  track.appendChild(rulerCanvas);
   return r;
+}
+
+// Time label for a major tick: seconds (m:ss past a minute), tenths below a second,
+// and seconds + frame number at frame scale ("1:01 12f").
+const fmtSec = (sec) => (sec >= 60 ? `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}` : `${sec}s`);
+function tickLabel(t, scale) {
+  const frames = Math.round(t / FRAME);
+  const sec = Math.floor(frames * FRAME + 1e-6);
+  if (scale.major < 0.5) {
+    const f = frames - Math.round(sec / FRAME);
+    return f ? `${fmtSec(sec)} ${f}f` : fmtSec(sec);
+  }
+  if (scale.major < 1) {
+    const tenth = Math.round((t - sec) * 10);
+    return sec >= 60 ? `${fmtSec(sec)}.${tenth}` : `${sec}.${tenth}s`;
+  }
+  return fmtSec(Math.round(t));
+}
+
+// A real ruler: line along the top, ticks hanging down, numbers underneath.
+function drawRuler() {
+  if (!rulerCanvas || !state.duration) return;
+  const dpr = window.devicePixelRatio || 1;
+  const w = viewW();
+  const h = ruler.clientHeight || 32;
+  if (rulerCanvas.width !== Math.round(w * dpr) || rulerCanvas.height !== Math.round(h * dpr)) {
+    rulerCanvas.width = Math.round(w * dpr);
+    rulerCanvas.height = Math.round(h * dpr);
+    rulerCanvas.style.width = `${w}px`;
+    rulerCanvas.style.height = `${h}px`;
+  }
+  rulerCanvas.style.left = `${root.scrollLeft}px`; // follows the view
+  const c = rulerCanvas.getContext('2d');
+  c.setTransform(dpr, 0, 0, dpr, 0, 0);
+  c.clearRect(0, 0, w, h);
+
+  const pps = pxPerSec();
+  const scale = SCALES.find((sc) => sc.major * pps >= MAJOR_MIN_PX) || SCALES[SCALES.length - 1];
+  const showMinor = scale.minor * pps >= 4;
+  const t0 = root.scrollLeft / pps;
+  const t1 = Math.min(outDuration(), (root.scrollLeft + w) / pps);
+  const muted = getComputedStyle(root).getPropertyValue('--muted').trim() || '#9aa0a6';
+  const text = getComputedStyle(root).getPropertyValue('--text').trim() || '#e8e8ea';
+
+  // baseline along the top
+  c.fillStyle = muted;
+  c.fillRect(0, 0, w, 1);
+
+  // ticks are counted in minor steps so frame ticks never drift
+  const per = Math.round(scale.major / scale.minor);
+  const midEvery = scale.mid ? Math.round(scale.mid / scale.minor) : 0;
+  const first = Math.max(0, Math.floor(t0 / scale.minor) - 1);
+  const last = Math.ceil(t1 / scale.minor) + 1;
+  c.font = '10px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
+  c.textBaseline = 'top';
+  for (let i = first; i <= last; i++) {
+    const t = i * scale.minor;
+    if (t > outDuration() + 1e-6) break;
+    const x = Math.round(t * pps - root.scrollLeft) + 0.5;
+    if (x < -40 || x > w + 40) continue;
+    const isMajor = i % per === 0;
+    const isMid = !isMajor && midEvery && i % midEvery === 0;
+    if (!isMajor && !isMid && !showMinor) continue;
+    const len = isMajor ? 12 : isMid ? 8 : 5;
+    c.fillStyle = isMajor ? text : muted;
+    c.fillRect(Math.floor(x), 1, 1, len);
+    if (isMajor) {
+      c.fillStyle = muted;
+      c.fillText(tickLabel(t, scale), Math.floor(x) + 3, 15);
+    }
+  }
 }
 
 function clipRow() {
@@ -366,6 +454,9 @@ function layoutBars() {
 }
 
 // ---- playhead ----
+// Scrubbing lands exactly on a frame, so the flag and the picture always agree.
+const onFrame = (o) => Math.round(o / FRAME) * FRAME;
+
 function seekOut(o) {
   video.currentTime = clamp(outToSrc(clamp(o, 0, outDuration()), true), 0, state.duration);
 }
@@ -375,7 +466,7 @@ function scrub(e, trackEl) {
   const track = trackEl || e.currentTarget;
   const seek = (ev) => {
     const r = track.getBoundingClientRect();
-    seekOut((ev.clientX - r.left) / pxPerSec());
+    seekOut(onFrame((ev.clientX - r.left) / pxPerSec()));
     keepPlayheadInView(); // dragging past the edge scrolls the timeline along
   };
   seek(e);
