@@ -1,14 +1,14 @@
 // Properties panel for the selected text, emoji or speed segment.
 // Rebuilt only when the selection changes so typing never loses focus.
 
-import { state, emit, subscribe, getSelected, pieces, OUT_W, OUT_H, srcToOut, outToSrc, outDuration } from './state.js';
+import { state, emit, subscribe, getSelected, pieces, srcToOut, outToSrc, outDuration, MIN_SIZE, MAX_SIZE } from './state.js';
 import { MAX_TEXT } from './exportFfmpeg.js';
 import { emojiUrl } from './emoji.js';
 
 const RATES = [1, 1.5, 2, 3, 4, 8];
 
-const SIZE_TEXT = 'Letter height in pixels, 30 to 400.';
-const SIZE_EMOJI = 'Width and height in pixels, 30 to 400.';
+const SIZE_TEXT = `Letter height in pixels on the horizontal video, ${MIN_SIZE} to ${MAX_SIZE}. Vertical scales it with the crop zoom so it covers the same spot.`;
+const SIZE_EMOJI = `Width and height in pixels on the horizontal video, ${MIN_SIZE} to ${MAX_SIZE}. Vertical scales it with the crop zoom so it covers the same spot.`;
 const START_HINT = 'When it appears, in seconds of the finished video (what the timeline shows).';
 const END_HINT = 'When it disappears, in seconds of the finished video.';
 const DELETE_HINT = 'Remove it. The Delete key does the same.';
@@ -16,10 +16,10 @@ const DELETE_HINT = 'Remove it. The Delete key does the same.';
 // Position, size, timing and animation: the same for text and emoji
 const placeFields = (sizeHint) => `
       <div class="row">
-        <label data-hint="Centre of it, across: 0% is the left edge, 100% the right. The same spot in the vertical and horizontal video.">X (%) <input data-k="xp" type="number" min="0" max="100" step="1"></label>
-        <label data-hint="Centre of it, down: 0% is the top, 100% the bottom. The same spot in the vertical and horizontal video.">Y (%) <input data-k="yp" type="number" min="0" max="100" step="1"></label>
+        <label data-hint="Where it sits on your clip, across: 0% is the left edge, 100% the right. It stays on that spot of the footage in both videos.">X (%) <input data-k="xp" type="number" min="0" max="100" step="1"></label>
+        <label data-hint="Where it sits on your clip, down: 0% is the top, 100% the bottom. It stays on that spot of the footage in both videos.">Y (%) <input data-k="yp" type="number" min="0" max="100" step="1"></label>
       </div>
-      <label data-hint="${sizeHint}">Size <input data-k="size" type="number" min="30" max="400" step="2"></label>
+      <label data-hint="${sizeHint}">Size <input data-k="size" type="number" min="${MIN_SIZE}" max="${MAX_SIZE}" step="2"></label>
       <div class="row">
         <label data-hint="${START_HINT}">Start (s) <input data-k="so" type="number" step="0.05" min="0"></label>
         <label data-hint="${END_HINT}">End (s) <input data-k="eo" type="number" step="0.05" min="0"></label>
@@ -100,13 +100,13 @@ ${placeFields(SIZE_TEXT)}
         if (k === 'so') it.start = outToSrc(o, true);
         else it.end = outToSrc(o);
       }
-      if (k === 'size') it.size = Math.min(400, Math.max(30, it.size));
-      // X/Y are shown as % of the frame; stored in vertical-frame pixels (see placeIn)
+      if (k === 'size') it.size = Math.min(MAX_SIZE, Math.max(MIN_SIZE, it.size));
+      // X/Y are shown as % of the clip; stored in source pixels (see placeIn)
       if (k === 'xp' || k === 'yp') {
         delete it[k];
         const pct = Math.min(100, Math.max(0, v));
-        if (k === 'xp') it.x = (pct / 100) * OUT_W;
-        else it.y = (pct / 100) * OUT_H;
+        if (k === 'xp') it.x = (pct / 100) * state.srcW;
+        else it.y = (pct / 100) * state.srcH;
       }
       if (it.end <= it.start) it.end = it.start + 0.1;
       emit();
@@ -121,7 +121,7 @@ function sync(item) {
     if (input === document.activeElement) return;
     const k = input.dataset.k;
     if (k === 'xp' || k === 'yp') {
-      input.value = Math.round(k === 'xp' ? (item.x / OUT_W) * 100 : (item.y / OUT_H) * 100);
+      input.value = Math.round(k === 'xp' ? (item.x / state.srcW) * 100 : (item.y / state.srcH) * 100);
       return;
     }
     if (k === 'so' || k === 'eo') {
@@ -129,7 +129,7 @@ function sync(item) {
       return;
     }
     const v = item[k];
-    input.value = typeof v === 'number' && k !== 'rate' && k !== 'size' ? v.toFixed(2) : v;
+    input.value = k === 'size' ? Math.round(v) : typeof v === 'number' && k !== 'rate' ? v.toFixed(2) : v;
   });
 }
 

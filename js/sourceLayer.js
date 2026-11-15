@@ -1,13 +1,13 @@
 // The left pane doubles as the horizontal preview: text and emoji are drawn on top
-// of the source video where they'll land in the 1920x1080 export. They can be
-// dragged and resized here too. It's the same item as in the vertical preview, so
-// the other pane follows (see placeIn in state.js).
+// of the source video exactly where they're pinned, which is where they land in
+// the 1920x1080 export. They can be dragged and resized here too; the vertical
+// preview follows, through its crop boxes (see placeIn in state.js).
 //
 // The Top/Bottom crop boxes sit above this layer. A press that lands on a text or
 // emoji is handled here first, so it moves the text instead of the box under it.
 // "Hide boxes" clears them away to see the clean horizontal frame.
 
-import { state, emit, clamp, OUT_W, OUT_H, HOR_W, HOR_H, placeIn } from './state.js';
+import { state, emit, clamp, HOR_W, HOR_H, placeIn, MIN_SIZE, MAX_SIZE } from './state.js';
 import { FONT, drawText, textVisual, fitRect } from './render.js';
 import { showStatus, OVERLAP_MSG } from './status.js';
 
@@ -56,16 +56,16 @@ const screenToFrame = (px) => (px * (window.devicePixelRatio || 1)) / k;
 
 // Box around a text or emoji in horizontal-frame pixels
 function itemBox(tx) {
-  const { x, y } = placeIn(tx, 'h');
+  const { x, y, s } = placeIn(tx, 'h');
   if (tx.kind === 'emoji') {
-    const s = tx.size * 1.06;
-    return { x: x - s / 2, y: y - s / 2, w: s, h: s };
+    const e = s * 1.06;
+    return { x: x - e / 2, y: y - e / 2, w: e, h: e };
   }
   ctx.save();
-  ctx.font = `${tx.size}px ${FONT}`;
-  const w = ctx.measureText(tx.text).width + tx.size * 0.3;
+  ctx.font = `${s}px ${FONT}`;
+  const w = ctx.measureText(tx.text).width + s * 0.3;
   ctx.restore();
-  const h = tx.size * 1.1;
+  const h = s * 1.1;
   return { x: x - w / 2, y: y - h / 2, w, h };
 }
 
@@ -141,13 +141,14 @@ function onPointerDown(e) {
   const move = (ev) => {
     const q = toFrame(ev);
     if (mode === 'move') {
-      // move in the horizontal frame, store back in vertical-frame units
-      tx.x = clamp(start.x + ((q.x - p.x) * OUT_W) / HOR_W, 0, OUT_W);
-      tx.y = clamp(start.y + ((q.y - p.y) * OUT_H) / HOR_H, 0, OUT_H);
+      // the horizontal frame is the source scaled by frame.w / srcW
+      const k = frame.w / state.srcW;
+      tx.x = clamp(start.x + (q.x - p.x) / k, 0, state.srcW);
+      tx.y = clamp(start.y + (q.y - p.y) / k, 0, state.srcH);
       snap(tx);
     } else {
       const c = placeIn(tx, 'h');
-      tx.size = Math.round(clamp((start.size * Math.hypot(q.x - c.x, q.y - c.y)) / start.dist, 30, 400));
+      tx.size = clamp((start.size * Math.hypot(q.x - c.x, q.y - c.y)) / start.dist, MIN_SIZE, MAX_SIZE);
     }
     emit();
   };
@@ -168,11 +169,11 @@ function snap(tx) {
   guides.x = null;
   guides.y = null;
   if (Math.abs(h.x - HOR_W / 2) < tol) {
-    tx.x = OUT_W / 2;
+    tx.x = state.srcW / 2;
     guides.x = HOR_W / 2;
   }
   if (Math.abs(h.y - HOR_H / 2) < tol) {
-    tx.y = OUT_H / 2;
+    tx.y = state.srcH / 2;
     guides.y = HOR_H / 2;
   }
 }

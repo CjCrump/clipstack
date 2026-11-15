@@ -1,6 +1,6 @@
 // Entry point: wires the modules to the page and runs the render loop.
 
-import { state, emit, uid, clampBoxes, rateAt, pieceAt, nextKept, pieces, srcToOut, outDuration, MIN_PIECE, OUT_W } from './state.js';
+import { state, emit, uid, clampBoxes, rateAt, pieceAt, nextKept, pieces, srcToOut, outDuration, MIN_PIECE, OUT_W, fromVertical } from './state.js';
 import { initCropBoxes, layout } from './cropBoxes.js';
 import { initPreview, drawPreview } from './preview.js';
 import { initSourceLayer, drawSourceLayer } from './sourceLayer.js';
@@ -113,8 +113,10 @@ video.addEventListener('loadedmetadata', () => {
 // ---- adding items at the playhead ----
 $('addText').addEventListener('click', () => {
   const t = video.currentTime;
+  // new items start where they always did in the vertical preview, pinned to that spot of the footage
+  const at = fromVertical(OUT_W / 2, 440);
   const item = {
-    id: uid(), text: 'SPANKY', x: OUT_W / 2, y: 440, size: 160,
+    id: uid(), text: 'SPANKY', x: at.x, y: at.y, size: 160 / at.sc,
     start: t, end: Math.min(state.duration, t + 1.4), anim: 'pop',
   };
   state.texts.push(item);
@@ -134,8 +136,9 @@ function pickEmoji(title, onPick) {
 $('addEmoji').addEventListener('click', () => {
   const t = video.currentTime;
   pickEmoji('Add emoji', ({ file, label }) => {
+    const at = fromVertical(OUT_W / 2, 760);
     const item = {
-      id: uid(), kind: 'emoji', file, label, x: OUT_W / 2, y: 760, size: 240,
+      id: uid(), kind: 'emoji', file, label, x: at.x, y: at.y, size: 240 / at.sc,
       start: t, end: Math.min(state.duration, t + 1.4), anim: 'pop',
     };
     state.texts.push(item);
@@ -200,6 +203,12 @@ document.addEventListener('keydown', (e) => {
     else zoomBy(e.key === '-' || e.key === '_' ? 1 / 1.5 : 1.5);
     return;
   }
+  // Ctrl+S and Ctrl+B split too (B is CapCut's split key), instead of Save / Bookmarks
+  if (ctrl && !e.altKey && !e.shiftKey && ['s', 'b'].includes(e.key.toLowerCase())) {
+    e.preventDefault();
+    if (!typing) splitAtPlayhead();
+    return;
+  }
   // Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y, except inside a text field, which has its own undo
   if (ctrl && !typing && ['z', 'y'].includes(e.key.toLowerCase())) {
     e.preventDefault();
@@ -208,8 +217,9 @@ document.addEventListener('keydown', (e) => {
     return;
   }
 
-  // fields type text; buttons and links use Space/Enter themselves
-  if (typing || e.target.closest('button, a') || ctrl || e.altKey) return;
+  // fields type text; a focused button or link keeps Space and Enter for itself
+  if (typing || ctrl || e.altKey) return;
+  if (e.target.closest('button, a') && (e.code === 'Space' || e.key === 'Enter')) return;
   if (e.code === 'Space') {
     e.preventDefault();
     togglePlay();

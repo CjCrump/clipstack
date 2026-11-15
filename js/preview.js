@@ -1,7 +1,11 @@
-// 9:16 preview canvas: draws both crops stacked, then text layers.
-// Text can be dragged to move it, or resized from its corner handle.
+// 9:16 preview canvas: draws both crops stacked, then text and emoji.
+// They can be dragged to move them, or resized from the corner handle. Items are
+// pinned to the footage (see placeIn in state.js), so moves made here are turned
+// back into a point in the source through the crop box under the pointer.
 
-import { state, emit, OUT_W, OUT_H, slotH, clamp } from './state.js';
+import {
+  state, emit, OUT_W, OUT_H, slotH, clamp, placeIn, fromVertical, vertScale, MIN_SIZE, MAX_SIZE,
+} from './state.js';
 import { FONT, drawComposite, drawText, textVisual } from './render.js';
 import { showStatus, OVERLAP_MSG } from './status.js';
 
@@ -21,15 +25,16 @@ export function initPreview(c, v) {
 function onKey(e) {
   const tx = state.selected?.type === 'text' && state.texts.find((i) => i.id === state.selected.id);
   if (!tx) return;
-  const step = e.shiftKey ? 50 : 10;
+  const sc = vertScale(tx); // steps are in preview pixels, stored in source pixels
+  const step = (e.shiftKey ? 50 : 10) / sc;
   const moves = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] };
   if (moves[e.key]) {
-    tx.x = clamp(tx.x + moves[e.key][0], 0, OUT_W);
-    tx.y = clamp(tx.y + moves[e.key][1], 0, OUT_H);
+    tx.x = clamp(tx.x + moves[e.key][0], 0, state.srcW);
+    tx.y = clamp(tx.y + moves[e.key][1], 0, state.srcH);
   } else if (e.key === '+' || e.key === '=') {
-    tx.size = clamp(tx.size + 8, 30, 400);
+    tx.size = clamp(tx.size + 8 / sc, MIN_SIZE, MAX_SIZE);
   } else if (e.key === '-' || e.key === '_') {
-    tx.size = clamp(tx.size - 8, 30, 400);
+    tx.size = clamp(tx.size - 8 / sc, MIN_SIZE, MAX_SIZE);
   } else {
     return;
   }
@@ -62,19 +67,22 @@ function snapTargetsY() {
   return [topH / 2, topH + (OUT_H - topH) / 2];
 }
 
-function snapText(tx) {
+// Snaps a point in the preview (not the item) to the guides, before it's
+// turned back into a footage point.
+function snapPoint(v) {
   activeGuides.x = null;
   activeGuides.y = null;
-  if (Math.abs(tx.x - OUT_W / 2) < SNAP) {
-    tx.x = OUT_W / 2;
+  if (Math.abs(v.x - OUT_W / 2) < SNAP) {
+    v.x = OUT_W / 2;
     activeGuides.x = OUT_W / 2;
   }
   for (const y of snapTargetsY()) {
-    if (Math.abs(tx.y - y) < SNAP) {
-      tx.y = y;
+    if (Math.abs(v.y - y) < SNAP) {
+      v.y = y;
       activeGuides.y = y;
     }
   }
+  return v;
 }
 
 function drawGuides() {
@@ -87,14 +95,15 @@ function drawGuides() {
 }
 
 function textBox(tx) {
+  const { x, y, s } = placeIn(tx, 'v');
   if (tx.kind === 'emoji') {
-    const s = tx.size * 1.06;
-    return { x: tx.x - s / 2, y: tx.y - s / 2, w: s, h: s };
+    const e = s * 1.06;
+    return { x: x - e / 2, y: y - e / 2, w: e, h: e };
   }
-  ctx.font = `${tx.size}px ${FONT}`;
-  const w = ctx.measureText(tx.text).width + tx.size * 0.3;
-  const h = tx.size * 1.1;
-  return { x: tx.x - w / 2, y: tx.y - h / 2, w, h };
+  ctx.font = `${s}px ${FONT}`;
+  const w = ctx.measureText(tx.text).width + s * 0.3;
+  const h = s * 1.1;
+  return { x: x - w / 2, y: y - h / 2, w, h };
 }
 
 function drawSelection(tx) {
@@ -157,18 +166,21 @@ function onPointerDown(e) {
   state.selected = { type: 'text', id: tx.id };
   emit();
 
-  const start = { x: tx.x, y: tx.y, size: tx.size, dist: Math.hypot(p.x - tx.x, p.y - tx.y) || 1 };
+  const v0 = placeIn(tx, 'v');
+  const start = { size: tx.size, dist: Math.hypot(p.x - v0.x, p.y - v0.y) || 1 };
   canvas.setPointerCapture(e.pointerId);
 
   const move = (ev) => {
     const q = toCanvas(ev);
     if (mode === 'move') {
-      tx.x = clamp(start.x + q.x - p.x, 0, OUT_W);
-      tx.y = clamp(start.y + q.y - p.y, 0, OUT_H);
-      snapText(tx);
+      const v = snapPoint({ x: clamp(v0.x + q.x - p.x, 0, OUT_W), y: clamp(v0.y + q.y - p.y, 0, OUT_H) });
+      const src = fromVertical(v.x, v.y);
+      tx.x = src.x;
+      tx.y = src.y;
     } else {
-      const d = Math.hypot(q.x - tx.x, q.y - tx.y);
-      tx.size = Math.round(clamp((start.size * d) / start.dist, 30, 400));
+      const c = placeIn(tx, 'v');
+      const d = Math.hypot(q.x - c.x, q.y - c.y);
+      tx.size = clamp((start.size * d) / start.dist, MIN_SIZE, MAX_SIZE);
     }
     emit();
   };

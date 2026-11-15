@@ -2,7 +2,7 @@
 // horizontal (the whole clip), then the text and emoji layers.
 // Shared by the previews and the exporter so they always match.
 
-import { state, OUT_W, OUT_H, HOR_W, HOR_H, box, slotH, boxH, srcToOut, popScale, popAlpha, placeIn } from './state.js';
+import { state, OUT_W, OUT_H, HOR_W, HOR_H, box, slotH, boxH, srcToOut, popScale, popAlpha, placeIn, fitRect } from './state.js';
 import { emojiImage } from './emoji.js';
 
 export const FONT = 'Bangers, Impact, sans-serif';
@@ -42,13 +42,7 @@ function drawLayers(ctx, t, fmt) {
   }
 }
 
-// The whole source, scaled to fit a frame (black bars if the shapes differ).
-export function fitRect(sw, sh, fw, fh) {
-  const k = Math.min(fw / sw, fh / sh);
-  const w = sw * k;
-  const h = sh * k;
-  return { x: (fw - w) / 2, y: (fh - h) / 2, w, h };
-}
+export { fitRect }; // used by the horizontal layer
 
 // How a text layer looks at source time t, or null if it's not on screen.
 export function textVisual(tx, t) {
@@ -61,8 +55,8 @@ export function textVisual(tx, t) {
 
 export function drawText(ctx, tx, scale, alpha, fmt = 'v') {
   if (tx.kind === 'emoji') return drawEmoji(ctx, tx, scale, alpha, fmt);
-  const { x, y } = placeIn(tx, fmt);
-  const size = tx.size * scale;
+  const { x, y, s } = placeIn(tx, fmt);
+  const size = s * scale;
   ctx.save();
   ctx.globalAlpha = alpha;
   ctx.font = `${size}px ${FONT}`;
@@ -81,8 +75,9 @@ export function drawText(ctx, tx, scale, alpha, fmt = 'v') {
 function drawEmoji(ctx, em, scale, alpha, fmt) {
   const img = emojiImage(em.file);
   if (!img) return; // still loading; the preview draws it on a later frame
-  const { x, y } = placeIn(em, fmt);
-  const s = em.size * scale;
+  const at = placeIn(em, fmt);
+  const { x, y } = at;
+  const s = at.s * scale;
   ctx.save();
   ctx.globalAlpha = alpha;
   ctx.drawImage(img, x - s / 2, y - s / 2, s, s);

@@ -5,13 +5,72 @@ export const OUT_H = 1920;
 export const HOR_W = 1920; // horizontal output
 export const HOR_H = 1080;
 
-// Text and emoji are placed once. Their x/y are stored in vertical-frame pixels
-// and land at the same share of the frame in the horizontal video (50% across
-// is 50% across in both). Size is in pixels and reads the same in both, since
-// each frame is 1080 on its short side.
-export function placeIn(item, fmt) {
-  return fmt === 'h' ? { x: (item.x * HOR_W) / OUT_W, y: (item.y * HOR_H) / OUT_H } : { x: item.x, y: item.y };
+// Text and emoji are pinned to the footage: x, y and size are in source-video
+// pixels, so whatever they sit on (a head, a health bar) they stay on in both
+// videos. Horizontal shows the whole clip, so they land right on that point.
+// Vertical shows the clip through the crop boxes, so they go through the box that
+// shows that point and scale with its zoom. A point outside both boxes is kept at
+// the nearest edge of that box's part of the frame so it never disappears.
+export const MIN_SIZE = 20; // source px
+export const MAX_SIZE = 600;
+
+// The whole source, scaled to fit a frame (black bars if the shapes differ).
+export function fitRect(sw, sh, fw, fh) {
+  const k = Math.min(fw / sw, fh / sh);
+  return { x: (fw - sw * k) / 2, y: (fh - sh * k) / 2, w: sw * k, h: sh * k };
 }
+
+// Which crop box shows source point (x, y): the facecam box first (it's usually
+// the smaller one inside the gameplay), then the gameplay box, else the nearest.
+export function boxAt(x, y) {
+  let best = 'A';
+  let bestD = Infinity;
+  for (const k of ['B', 'A']) {
+    const b = box(k);
+    const dx = Math.max(b.x - x, 0, x - (b.x + b.w));
+    const dy = Math.max(b.y - y, 0, y - (b.y + boxH(k)));
+    const d = Math.hypot(dx, dy);
+    if (d === 0) return k;
+    if (d < bestD) { bestD = d; best = k; }
+  }
+  return best;
+}
+
+// Where an item lands in a format, and how big: { x, y, s } in that frame's pixels.
+export function placeIn(item, fmt) {
+  if (fmt === 'h') {
+    const r = fitRect(state.srcW, state.srcH, HOR_W, HOR_H);
+    const k = r.w / state.srcW;
+    return { x: r.x + item.x * k, y: r.y + item.y * k, s: item.size * k };
+  }
+  const key = boxAt(item.x, item.y);
+  const b = box(key);
+  const sc = OUT_W / b.w;
+  const top = key === 'A' ? 0 : slotH('A');
+  const bottom = key === 'A' ? slotH('A') : OUT_H;
+  return {
+    x: clamp((item.x - b.x) * sc, 0, OUT_W),
+    y: clamp(top + (item.y - b.y) * sc, top, bottom),
+    s: item.size * sc,
+  };
+}
+
+// A point in the vertical frame back to the footage, through the box showing that
+// part of the frame. sc = vertical px per source px there.
+export function fromVertical(vx, vy) {
+  const key = vy < slotH('A') ? 'A' : 'B';
+  const b = box(key);
+  const sc = OUT_W / b.w;
+  const top = key === 'A' ? 0 : slotH('A');
+  return {
+    x: clamp(b.x + vx / sc, 0, state.srcW),
+    y: clamp(b.y + (vy - top) / sc, 0, state.srcH),
+    sc,
+  };
+}
+
+// vertical px per source px for an item, where it currently sits
+export const vertScale = (item) => OUT_W / box(boxAt(item.x, item.y)).w;
 
 export const state = {
   fileName: 'clip.mp4',
@@ -24,7 +83,7 @@ export const state = {
   // Overlay layers drawn over the video, in stacking order. Text: { id, text, ... }.
   // Emoji: { id, kind: 'emoji', file, label, ... }. Both share x, y (centre), size,
   // start, end and anim, so selecting, dragging and the timeline treat them the same.
-  texts: [], // { id, kind?, text | file+label, x, y, size, start, end, anim }
+  texts: [], // { id, kind?, text | file+label, x, y, size (source px), start, end (source s), anim }
   // The kept pieces of the source clip, in source seconds, in order and never
   // overlapping. Starts as one piece; Split cuts one in two, Delete removes one
   // (that part of the clip is skipped), and each piece has its own speed.

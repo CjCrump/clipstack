@@ -49,7 +49,8 @@ function escapeFontPath(p) {
 function drawtext(tx, fontPath, fmt) {
   const T = f(srcToOut(tx.start));
   const D = f(srcToOut(tx.end) - srcToOut(tx.start));
-  const S = Math.round(num(tx.size, 10, 600, 160));
+  const at = placeIn(tx, fmt);
+  const S = Math.round(num(at.s, 10, 1000, 160));
   const fade = f(fadeTime(D));
   const lt = `(t-${T})`;
 
@@ -62,7 +63,6 @@ function drawtext(tx, fontPath, fmt) {
   // The trailing space stops slanted fonts (Bangers) clipping their last letter.
   const text = cleanText(tx.text);
   const [W, H] = fmt === 'h' ? [HOR_W, HOR_H] : [OUT_W, OUT_H];
-  const at = placeIn(tx, fmt);
   const x = f(num(at.x, 0, W, W / 2));
   const y = f(num(at.y, 0, H, H / 2));
 
