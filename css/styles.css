@@ -208,9 +208,10 @@ body.dragging .source-wrap { outline: 3px dashed var(--accent); outline-offset: 
 /* timeline */
 .timeline-pane { border-top: 1px solid var(--line); background: var(--pane); }
 .transport { display: flex; align-items: center; gap: 12px; padding: 6px 12px; }
-.timeline { position: relative; padding-bottom: 8px; user-select: none; }
+.timeline { position: relative; padding-bottom: 8px; user-select: none; overflow-x: auto; overflow-y: hidden; }
+.tl-content { position: relative; width: calc(var(--label-w) + var(--tl-w, 100%)); min-width: 100%; }
 
-.tl-row { display: grid; grid-template-columns: var(--label-w) 1fr; height: 28px; }
+.tl-row { display: grid; grid-template-columns: var(--label-w) var(--tl-w, 1fr); height: 28px; }
 .tl-row.ruler { height: 22px; }
 .tl-label {
   padding: 0 10px;
@@ -220,6 +221,10 @@ body.dragging .source-wrap { outline: 3px dashed var(--accent); outline-offset: 
   font-size: 12px;
   overflow: hidden;
   white-space: nowrap;
+  position: sticky; /* labels stay put while a zoomed timeline scrolls */
+  left: 0;
+  z-index: 2;
+  background: var(--pane);
 }
 .tl-track {
   position: relative;
@@ -253,7 +258,11 @@ body.dragging .source-wrap { outline: 3px dashed var(--accent); outline-offset: 
   cursor: grab;
   touch-action: none;
 }
-.tl-bar.speed { background: var(--speed); color: #000; }
+.tl-bar.clip { top: 3px; bottom: 3px; border-radius: 3px; background: #2f6f8f; color: #fff; cursor: pointer; font-weight: 600; }
+.tl-bar.clip.alt { background: #3a809f; }
+.tl-bar.clip { box-shadow: inset -2px 0 0 #121317; } /* a visible seam where pieces meet */
+.tl-bar.emoji { background: #b0469a; }
+.tl-bar.cut { opacity: .35; }
 .tl-bar.selected { outline: 2px solid #fff; }
 .tl-edge { position: absolute; top: 0; bottom: 0; width: 8px; cursor: ew-resize; }
 .tl-edge.l { left: 0; }
@@ -264,9 +273,12 @@ body.dragging .source-wrap { outline: 3px dashed var(--accent); outline-offset: 
   top: 0;
   bottom: 0;
   left: var(--label-w);
+  width: var(--tl-w, auto);
   right: 0;
   pointer-events: none;
 }
+.tl-snap { position: absolute; top: 0; bottom: 0; width: 2px; background: #ffe14d; }
+.tl-snap[hidden] { display: none; }
 .tl-playhead { position: absolute; top: 0; bottom: 0; width: 2px; background: #ff4d4d; }
 
 /* modal */

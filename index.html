@@ -52,7 +52,9 @@
     <input type="file" id="fileInput" accept="video/*" hidden>
     <button id="addText" class="btn" disabled data-hint="Add a text pop at the playhead. Change the words in Properties." data-hint-disabled="Load a clip first.">+ Text</button>
     <button id="addEmoji" class="btn" disabled data-hint="Add an emoji at the playhead. Search by name, like fire or skull." data-hint-disabled="Load a clip first.">+ Emoji</button>
-    <button id="addSpeed" class="btn" disabled data-hint="Speed up 3 seconds from the playhead, 4x to start. Voices keep their pitch." data-hint-disabled="Load a clip first.">+ Speed</button>
+    <button id="splitBtn" class="btn" disabled data-hint="Cut the clip in two at the playhead (S). Select a piece to speed it up or delete it." data-hint-disabled="Load a clip first.">Split</button>
+    <button id="undoBtn" class="btn" disabled data-hint="Undo the last change (Ctrl+Z)." data-hint-disabled="Nothing to undo yet.">Undo</button>
+    <button id="redoBtn" class="btn" disabled data-hint="Redo what you undid (Ctrl+Shift+Z or Ctrl+Y)." data-hint-disabled="Nothing to redo.">Redo</button>
     <span class="spacer"></span>
     <a class="toolbar-link" href="security.html" data-hint="What Clipstack does with your clip. Short answer: it never leaves your computer.">Security</a>
     <button id="exportFfmpeg" class="btn" disabled data-hint="Download a command to render with ffmpeg on your own computer. Emoji aren't included." data-hint-disabled="Load a clip first.">ffmpeg command</button>
@@ -63,7 +65,7 @@
     <ol>
       <li><b>Load</b> a 16:9 clip.</li>
       <li>Put the <b>Top</b> box on your gameplay, <b>Bottom</b> on your facecam.</li>
-      <li>Add <b>text</b>, <b>emoji</b> or a <b>speed-up</b> at the playhead.</li>
+      <li><b>Split</b> with S, then speed up or delete pieces. Add <b>text</b> or <b>emoji</b> at the playhead.</li>
       <li><b>Export MP4</b>.</li>
     </ol>
     <div class="tips-end">
@@ -108,6 +110,10 @@
       <span id="timeLabel" class="mono">0.00 / 0.00</span>
       <button id="keysBtn" class="btn" data-hint="Every keyboard shortcut in one list.">Keyboard shortcuts</button>
       <button id="tipsBtn" class="btn" data-hint="Show the quick start steps again.">Tips</button>
+      <span class="spacer"></span>
+      <button id="zoomOut" class="btn" disabled aria-label="Zoom out" data-hint="Zoom the timeline out (Ctrl -)." data-hint-disabled="Load a clip first.">−</button>
+      <button id="zoomIn" class="btn" disabled aria-label="Zoom in" data-hint="Zoom the timeline in (Ctrl +). Ctrl + mouse wheel works too." data-hint-disabled="Load a clip first.">+</button>
+      <button id="zoomFit" class="btn" disabled data-hint="Fit the whole video in the timeline (Ctrl 0)." data-hint-disabled="Load a clip first.">Fit</button>
     </div>
     <div id="timeline" class="timeline"></div>
   </footer>
@@ -119,7 +125,12 @@
     <table class="keys">
       <tr><th colspan="2">Anywhere</th></tr>
       <tr><td>Space</td><td>Play or pause (when not on a button or field)</td></tr>
-      <tr><td>Delete</td><td>Remove the selected text, emoji or speed section</td></tr>
+      <tr><td>Delete</td><td>Remove the selected text, emoji or clip piece</td></tr>
+      <tr><td>S</td><td>Split the clip at the playhead</td></tr>
+      <tr><td>Ctrl + Z</td><td>Undo</td></tr>
+      <tr><td>Ctrl + Shift + Z, Ctrl + Y</td><td>Redo</td></tr>
+      <tr><td>Ctrl + / Ctrl −</td><td>Zoom the timeline in or out (Ctrl + mouse wheel too)</td></tr>
+      <tr><td>Ctrl + 0</td><td>Fit the whole video in the timeline</td></tr>
       <tr><td>Esc</td><td>Close this window</td></tr>
       <tr><th colspan="2">Crop boxes (Tab to one)</th></tr>
       <tr><td>Arrows</td><td>Move</td></tr>
@@ -132,7 +143,8 @@
       <tr><td>Arrows (on the ruler)</td><td>Move the playhead 0.1s</td></tr>
       <tr><td>, / .</td><td>Step one frame</td></tr>
       <tr><td>Home / End</td><td>Jump to start or end</td></tr>
-      <tr><td>Arrows (on a bar)</td><td>Move the text, emoji or speed section 0.1s</td></tr>
+      <tr><td>Arrows (on a clip piece)</td><td>Go to the next or previous piece</td></tr>
+      <tr><td>Arrows (on a text or emoji bar)</td><td>Move it 0.1s</td></tr>
       <tr><td>Ctrl + Arrows</td><td>Shorten or lengthen it</td></tr>
       <tr><td>[ / ]</td><td>Set its start or end to the playhead</td></tr>
       <tr><td>Enter</td><td>Jump the playhead to its start</td></tr>

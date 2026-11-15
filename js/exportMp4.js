@@ -84,7 +84,8 @@ export async function exportMp4({ file, onProgress, signal }) {
 
     const frames = Math.max(1, Math.floor(outDur * FPS));
     const lastSrc = state.duration - 0.001;
-    const srcTimes = Array.from({ length: frames }, (_, i) => Math.min(lastSrc, outToSrc(i / FPS)));
+    // `true`: a frame landing exactly on a cut shows the next piece, not the end of the one before
+    const srcTimes = Array.from({ length: frames }, (_, i) => Math.min(lastSrc, outToSrc(i / FPS, true)));
     const sink = new mb.VideoSampleSink(videoTrack);
 
     let i = 0;
@@ -115,8 +116,8 @@ export async function exportMp4({ file, onProgress, signal }) {
   }
 }
 
-// Decode the whole audio track, then rebuild it segment by segment with the
-// speed sections time-stretched, so it lines up exactly with the video.
+// Decode the whole audio track, then rebuild it piece by piece: deleted pieces
+// skipped, sped-up pieces time-stretched, so it lines up exactly with the video.
 async function buildAudio(mb, track, outDur, signal) {
   const sink = new mb.AudioBufferSink(track);
   const sr = track.sampleRate;

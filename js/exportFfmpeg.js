@@ -76,8 +76,9 @@ export function buildFilter(fontPath) {
 
   segs.forEach((seg, i) => {
     const s = { ...seg, rate: num(seg.rate, 1, 16, 1) };
-    const last = i === segs.length - 1;
-    const range = last ? `start=${f(s.start)}` : `start=${f(s.start)}:end=${f(s.end)}`;
+    // the piece that runs to the end of the file is left open-ended so no frame is lost
+    const toEnd = s.end >= state.duration - 0.01;
+    const range = toEnd ? `start=${f(s.start)}` : `start=${f(s.start)}:end=${f(s.end)}`;
     const pts = s.rate === 1 ? 'PTS-STARTPTS' : `(PTS-STARTPTS)/${s.rate}`;
     lines.push(`[0:v]trim=${range},setpts=${pts}[v${i}]`);
     lines.push(`[0:a]atrim=${range},asetpts=PTS-STARTPTS${atempo(s.rate)}[a${i}]`);
@@ -92,7 +93,10 @@ export function buildFilter(fontPath) {
   lines.push(`[sb]${cropFor('B')},scale=${OUT_W}:${OUT_H - topH},setsar=1[bot]`);
 
   // ffmpeg runs on the user's computer and can't see the emoji images, so emoji are left out
-  const texts = state.texts.filter((t) => t.kind !== 'emoji').sort((a, b) => a.start - b.start);
+  const texts = state.texts
+    .filter((t) => t.kind !== 'emoji')
+    .filter((t) => srcToOut(t.end) - srcToOut(t.start) > 0.02) // skip text inside a deleted piece
+    .sort((a, b) => a.start - b.start);
   const chain = texts.map((t) => drawtext(t, fontPath));
   lines.push(`[top][bot]vstack${chain.length ? ',' + chain.join(',') : ''}[v]`);
 

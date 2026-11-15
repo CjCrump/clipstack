@@ -1,11 +1,11 @@
 // Properties panel for the selected text, emoji or speed segment.
 // Rebuilt only when the selection changes so typing never loses focus.
 
-import { state, emit, subscribe, getSelected } from './state.js';
+import { state, emit, subscribe, getSelected, pieces } from './state.js';
 import { MAX_TEXT } from './exportFfmpeg.js';
 import { emojiUrl } from './emoji.js';
 
-const RATES = [1.5, 2, 3, 4, 8];
+const RATES = [1, 1.5, 2, 3, 4, 8];
 
 const SIZE_TEXT = 'Letter height in pixels, 30 to 400.';
 const SIZE_EMOJI = 'Width and height in pixels, 30 to 400.';
@@ -42,7 +42,7 @@ export function initPanel(el, opts = {}) {
 
 function render() {
   const item = getSelected();
-  const key = item ? `${state.selected.type}:${item.id}:${item.file || ''}` : null;
+  const key = item ? `${state.selected.type}:${item.id}:${item.file || ''}:${state.clips.length}` : null;
   if (key !== shownKey) {
     shownKey = key;
     build(item);
@@ -52,7 +52,7 @@ function render() {
 
 function build(item) {
   if (!item) {
-    root.innerHTML = '<p class="muted">Select a text, emoji or speed bar (click it, or Tab to it on the timeline) to edit it. Drag text or emoji in the preview to move it, and use its corner handle to resize.</p>';
+    root.innerHTML = '<p class="muted">Select a clip piece, text or emoji on the timeline (click it, or Tab to it) to edit it. Drag text or emoji in the preview to move it, and use its corner handle to resize. S splits the clip at the playhead.</p>';
     return;
   }
   if (state.selected.type === 'text' && item.kind === 'emoji') {
@@ -70,13 +70,18 @@ ${placeFields(SIZE_EMOJI)}
 ${placeFields(SIZE_TEXT)}
       <button class="btn danger" data-act="delete" data-hint="${DELETE_HINT}">Delete text</button>`;
   } else {
+    const list = pieces();
+    const only = list.length === 1;
     root.innerHTML = `
-      <label data-hint="How much faster this part plays. Voices keep their pitch.">Speed <select data-k="rate">${RATES.map((r) => `<option value="${r}">${r}x</option>`).join('')}</select></label>
-      <div class="row">
-        <label data-hint="${START_HINT}">Start (s) <input data-k="start" type="number" step="0.05" min="0"></label>
-        <label data-hint="${END_HINT}">End (s) <input data-k="end" type="number" step="0.05" min="0"></label>
-      </div>
-      <button class="btn danger" data-act="delete" data-hint="${DELETE_HINT}">Delete speed</button>`;
+      <p class="piece-info"></p>
+      <label data-hint="How much faster this piece plays. Voices keep their pitch.">Speed <select data-k="rate">${RATES.map((r) => `<option value="${r}">${r}x</option>`).join('')}</select></label>
+      <button class="btn danger" data-act="delete" ${only ? 'disabled' : ''}
+        data-hint="Cut this piece out of the video. Everything after it slides left. The Delete key does the same. Ctrl+Z brings it back."
+        data-hint-disabled="Split the clip first: there has to be something left.">Delete piece</button>`;
+    const n = list.indexOf(item) + 1;
+    root.querySelector('.piece-info').textContent =
+      `Piece ${n} of ${list.length}: ${item.start.toFixed(2)}s to ${item.end.toFixed(2)}s of your clip. ` +
+      'Split with S at the playhead to make more pieces.';
   }
 
   root.querySelectorAll('[data-k]').forEach((input) => {
@@ -113,7 +118,8 @@ function sync(item) {
 export function deleteSelected() {
   const s = state.selected;
   if (!s) return;
-  const key = s.type === 'text' ? 'texts' : 'speeds';
+  if (s.type === 'clip' && state.clips.length <= 1) return; // something has to stay
+  const key = s.type === 'text' ? 'texts' : 'clips';
   state[key] = state[key].filter((i) => i.id !== s.id);
   state.selected = null;
   emit();

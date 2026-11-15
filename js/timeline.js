@@ -1,17 +1,29 @@
-// Timeline: a ruler, one speed lane, and one lane per text layer.
-// Drag a bar to move it, drag its edges to stretch or shrink it.
-// Click or drag on the ruler / empty track to scrub.
-// Keyboard: the ruler is a playhead slider; bars are focusable (see onBarKey).
+// Timeline, drawn in output time (the finished video): deleted pieces are gone and
+// sped-up pieces are shorter, so what you see here is what you export.
+//
+// Rows: a ruler (the playhead slider), the Clip row (one bar per kept piece), then
+// one row per text or emoji. Text and emoji are stored in source time so they stay
+// on the moment they were placed on, and are converted here for display.
+//
+// Mouse: drag a text/emoji bar to move it, drag its edges to trim; edges snap to
+// clip splits and the playhead. Click a clip piece to select it. Click or drag on
+// the ruler or an empty track to move the playhead. Ctrl + wheel zooms.
+// Keyboard: see onRulerKey / onBarKey / onPieceKey. Ctrl + and - zoom (main.js).
 
-import { state, emit, subscribe, clamp } from './state.js';
+import {
+  state, emit, subscribe, clamp, srcToOut, outToSrc, outDuration, pieceEdgesOut, pieces,
+} from './state.js';
 
-const MIN_LEN = 0.1;
-
+const MIN_LEN = 0.1; // shortest text/emoji, output seconds
 const FRAME = 1 / 30;
+const SNAP_PX = 8;
+const MAX_ZOOM = 60;
+const TICK_STEPS = [0.1, 0.2, 0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300];
 
-let root, video, playhead, ruler;
+let root, video, playhead, snapLine, ruler, content;
 let lastAriaT = -1;
 let structureKey = '';
+let zoom = 1;
 const bars = new Map(); // "type:id" -> element
 
 export function initTimeline(el, v) {
@@ -19,24 +31,57 @@ export function initTimeline(el, v) {
   video = v;
   subscribe(render);
   new ResizeObserver(() => { structureKey = ''; render(); }).observe(root);
+  root.addEventListener('wheel', (e) => {
+    if (!(e.ctrlKey || e.metaKey) || !state.duration) return;
+    e.preventDefault(); // otherwise the browser zooms the page
+    zoomBy(e.deltaY < 0 ? 1.25 : 0.8, e.clientX);
+  }, { passive: false });
 }
 
-const pxPerSec = () => {
-  const track = root.querySelector('.tl-track');
-  return track && state.duration ? track.clientWidth / state.duration : 1;
-};
+// ---- geometry ----
+const labelW = () => parseFloat(getComputedStyle(root).getPropertyValue('--label-w')) || 90;
+const viewW = () => Math.max(50, root.clientWidth - labelW());
+const pxPerSec = () => (state.duration ? (viewW() * zoom) / Math.max(0.1, outDuration()) : 1);
+const outNow = () => srcToOut(video.currentTime);
+
+// ---- zoom ----
+// Zoom keeps the point under the mouse (or the playhead) where it was on screen.
+export function zoomBy(factor, clientX) {
+  if (!state.duration) return;
+  const anchorOut = clientX === undefined
+    ? outNow()
+    : (clientX - root.getBoundingClientRect().left - labelW() + root.scrollLeft) / pxPerSec();
+  const screenX = anchorOut * pxPerSec() - root.scrollLeft;
+  zoom = clamp(zoom * factor, 1, MAX_ZOOM);
+  structureKey = ''; // ticks depend on zoom
+  render();
+  root.scrollLeft = Math.max(0, anchorOut * pxPerSec() - screenX);
+}
+export function zoomFit() {
+  zoom = 1;
+  structureKey = '';
+  render();
+  root.scrollLeft = 0;
+}
 
 export function updatePlayhead(t) {
-  if (playhead) playhead.style.left = `${t * pxPerSec()}px`;
-  if (ruler && Math.abs(t - lastAriaT) > 0.05) {
-    lastAriaT = t;
-    ruler.setAttribute('aria-valuenow', t.toFixed(2));
-    ruler.setAttribute('aria-valuetext', `${t.toFixed(1)} seconds`);
+  if (!playhead) return;
+  const x = srcToOut(t) * pxPerSec();
+  playhead.style.left = `${x}px`;
+  // while playing zoomed in, page the view along with the playhead
+  if (!video.paused && zoom > 1 && (x < root.scrollLeft || x > root.scrollLeft + viewW() - 20)) {
+    root.scrollLeft = Math.max(0, x - 40);
+  }
+  const o = srcToOut(t);
+  if (ruler && Math.abs(o - lastAriaT) > 0.05) {
+    lastAriaT = o;
+    ruler.setAttribute('aria-valuenow', o.toFixed(2));
+    ruler.setAttribute('aria-valuetext', `${o.toFixed(1)} seconds`);
   }
 }
 
 function render() {
-  const key = `${state.duration}|${state.speeds.map((s) => s.id)}|${state.texts.map((t) => t.id)}`;
+  const key = `${state.duration}|${pieces().map((p) => `${p.id}:${p.rate}`)}|${state.texts.map((t) => t.id)}|${zoom}`;
   if (key !== structureKey) {
     structureKey = key;
     build();
@@ -47,29 +92,41 @@ function render() {
 function build() {
   // rebuilding replaces the elements, so put keyboard focus back where it was
   const focusedKey = root.contains(document.activeElement) ? document.activeElement.dataset.tlKey : null;
+  const scroll = root.scrollLeft;
   root.innerHTML = '';
   bars.clear();
   ruler = null;
   if (!state.duration) return;
 
-  root.appendChild(rulerRow());
-  root.appendChild(lane('Speed', state.speeds, 'speed'));
+  const width = Math.ceil(outDuration() * pxPerSec());
+  root.style.setProperty('--tl-w', `${width}px`);
+  content = document.createElement('div');
+  content.className = 'tl-content';
+  root.appendChild(content);
+
+  content.appendChild(rulerRow());
+  content.appendChild(clipRow());
   const counts = { text: 0, emoji: 0 };
   state.texts.forEach((t) => {
     const kind = t.kind === 'emoji' ? 'emoji' : 'text';
     counts[kind]++;
-    root.appendChild(lane(`${kind === 'emoji' ? 'Emoji' : 'Text'} ${counts[kind]}`, [t], 'text'));
+    content.appendChild(lane(`${kind === 'emoji' ? 'Emoji' : 'Text'} ${counts[kind]}`, t));
   });
 
   const layer = document.createElement('div');
   layer.className = 'tl-playhead-layer';
   playhead = document.createElement('div');
   playhead.className = 'tl-playhead';
-  layer.appendChild(playhead);
-  root.appendChild(layer);
+  snapLine = document.createElement('div');
+  snapLine.className = 'tl-snap';
+  snapLine.hidden = true;
+  layer.append(snapLine, playhead);
+  content.appendChild(layer);
 
+  root.scrollLeft = scroll;
   const refocus = focusedKey === 'ruler' ? ruler : bars.get(focusedKey);
   refocus?.focus();
+  updatePlayhead(video.currentTime);
 }
 
 function row(labelText, cls = '') {
@@ -93,74 +150,114 @@ function rulerRow() {
   track.setAttribute('role', 'slider');
   track.setAttribute('aria-label', 'Playhead');
   track.dataset.hintFocus = 'only';
-  track.dataset.hint = 'Click or drag to move the playhead. Arrows step 0.1s, comma and period step one frame, Home and End jump.';
+  track.dataset.hint = 'Click or drag to move the playhead. Arrows step 0.1s, comma and period step one frame, Home and End jump. Ctrl + and - zoom.';
   track.setAttribute('aria-valuemin', '0');
-  track.setAttribute('aria-valuemax', state.duration.toFixed(2));
+  track.setAttribute('aria-valuemax', outDuration().toFixed(2));
   track.addEventListener('keydown', onRulerKey);
   lastAriaT = -1;
-  const step = state.duration > 60 ? 5 : 1;
-  for (let s = 0; s <= state.duration; s += step) {
+  const pps = pxPerSec();
+  const step = TICK_STEPS.find((s) => s * pps >= 70) || 600;
+  const total = outDuration();
+  for (let s = 0; s <= total + 1e-6; s += step) {
     const tick = document.createElement('div');
     tick.className = 'tl-tick';
-    tick.style.left = `${(s / state.duration) * 100}%`;
-    tick.textContent = `${s}s`;
+    tick.style.left = `${s * pps}px`;
+    tick.textContent = step < 1 ? `${s.toFixed(1)}s` : `${Math.round(s)}s`;
     track.appendChild(tick);
   }
   return r;
 }
 
-function lane(labelText, items, type) {
-  const { r, track } = row(labelText);
-  for (const item of items) {
-    const bar = document.createElement('div');
-    bar.className = `tl-bar ${type}`;
-    bar.innerHTML = '<span class="tl-name"></span><div class="tl-edge l"></div><div class="tl-edge r"></div>';
-    const key = `${type}:${item.id}`;
-    bar.tabIndex = 0;
-    bar.dataset.tlKey = key;
-    bar.setAttribute('role', 'button');
-    bar.dataset.hint = type === 'speed'
-      ? 'Sped-up section. Drag to move it, drag an edge to trim. Arrows move it, [ and ] snap its ends to the playhead.'
-      : 'When this shows. Drag to move it, drag an edge to trim. Arrows move it, [ and ] snap its ends to the playhead.';
-    bar.addEventListener('pointerdown', (e) => dragBar(e, type, item, bar));
-    bar.addEventListener('focus', () => {
-      if (state.selected?.type !== type || state.selected.id !== item.id) {
-        state.selected = { type, id: item.id };
-        emit();
-      }
+function clipRow() {
+  const { r, track } = row('Clip', 'clip');
+  pieces().forEach((p, i) => {
+    const bar = makeBar('clip', p, i % 2 ? 'alt' : '');
+    bar.dataset.hint = 'A piece of your clip. Select it to change its speed or delete it. S splits at the playhead.';
+    bar.addEventListener('pointerdown', (e) => {
+      e.stopPropagation();
+      select('clip', p.id);
+      scrub(e, track); // clicking a piece also moves the playhead there
     });
-    bar.addEventListener('keydown', (e) => onBarKey(e, type, item));
+    bar.addEventListener('keydown', (e) => onPieceKey(e, p));
     track.appendChild(bar);
-    bars.set(key, bar);
-  }
+  });
   return r;
+}
+
+function lane(labelText, item) {
+  const { r, track } = row(labelText);
+  const bar = makeBar('text', item, item.kind === 'emoji' ? 'emoji' : '');
+  bar.insertAdjacentHTML('beforeend', '<div class="tl-edge l"></div><div class="tl-edge r"></div>');
+  bar.dataset.hint = 'When this shows. Drag to move it, drag an edge to trim; edges snap to splits and the playhead. Arrows move it, [ and ] set its ends to the playhead.';
+  bar.addEventListener('pointerdown', (e) => dragBar(e, item, bar));
+  bar.addEventListener('keydown', (e) => onBarKey(e, item));
+  track.appendChild(bar);
+  return r;
+}
+
+function makeBar(type, item, extra) {
+  const bar = document.createElement('div');
+  bar.className = `tl-bar ${type} ${extra}`;
+  bar.innerHTML = '<span class="tl-name"></span>';
+  const key = `${type}:${item.id}`;
+  bar.tabIndex = 0;
+  bar.dataset.tlKey = key;
+  bar.setAttribute('role', 'button');
+  bar.addEventListener('focus', () => select(type, item.id));
+  bars.set(key, bar);
+  return bar;
+}
+
+function select(type, id) {
+  if (state.selected?.type !== type || state.selected.id !== id) {
+    state.selected = { type, id };
+    emit();
+  }
 }
 
 function layoutBars() {
   const pps = pxPerSec();
   const sel = state.selected ? `${state.selected.type}:${state.selected.id}` : '';
+  const list = pieces();
   for (const [key, bar] of bars) {
     const [type, id] = key.split(':');
-    const list = type === 'text' ? state.texts : state.speeds;
-    const item = list.find((i) => i.id === Number(id));
+    const item = (type === 'text' ? state.texts : state.clips).find((i) => i.id === Number(id));
     if (!item) continue;
-    bar.style.left = `${item.start * pps}px`;
-    bar.style.width = `${(item.end - item.start) * pps}px`;
-    const isEmoji = item.kind === 'emoji';
-    const name = type === 'text' ? (isEmoji ? item.label : item.text) : `${item.rate}x`;
-    bar.querySelector('.tl-name').textContent = name;
-    bar.setAttribute('aria-label',
-      `${type === 'text' ? (isEmoji ? 'Emoji' : 'Text') : 'Speed'} ${name}, ${item.start.toFixed(2)} to ${item.end.toFixed(2)} seconds`);
+    const s = srcToOut(item.start);
+    const e = srcToOut(item.end);
+    const cut = e - s < 0.02; // a text sitting entirely in a deleted piece
+    bar.style.left = `${s * pps}px`;
+    bar.style.width = `${Math.max(cut ? 6 : 2, (e - s) * pps)}px`;
+    bar.classList.toggle('cut', cut);
     bar.classList.toggle('selected', key === sel);
+    let name;
+    let label;
+    if (type === 'clip') {
+      const n = list.indexOf(item) + 1;
+      name = item.rate === 1 ? '' : `${item.rate}x`;
+      label = `Clip piece ${n} of ${list.length}, ${s.toFixed(2)} to ${e.toFixed(2)} seconds, ${item.rate}x speed`;
+    } else {
+      const isEmoji = item.kind === 'emoji';
+      name = isEmoji ? item.label : item.text;
+      label = `${isEmoji ? 'Emoji' : 'Text'} ${name}, ` +
+        (cut ? 'hidden: it sits in a deleted piece' : `${s.toFixed(2)} to ${e.toFixed(2)} seconds`);
+    }
+    bar.querySelector('.tl-name').textContent = name;
+    bar.setAttribute('aria-label', label);
   }
 }
 
-function scrub(e) {
-  if (e.target.closest('.tl-bar')) return;
-  const track = e.currentTarget;
+// ---- playhead ----
+function seekOut(o) {
+  video.currentTime = clamp(outToSrc(clamp(o, 0, outDuration()), true), 0, state.duration);
+}
+
+function scrub(e, trackEl) {
+  if (e.target.closest('.tl-bar.text')) return;
+  const track = trackEl || e.currentTarget;
   const seek = (ev) => {
     const r = track.getBoundingClientRect();
-    video.currentTime = clamp((ev.clientX - r.left) / pxPerSec(), 0, state.duration);
+    seekOut((ev.clientX - r.left) / pxPerSec());
   };
   seek(e);
   track.setPointerCapture(e.pointerId);
@@ -172,45 +269,73 @@ function scrub(e) {
   track.addEventListener('pointerup', up);
 }
 
-// Speed segments can't overlap, so find the free space around one.
-function speedBounds(item) {
-  let lo = 0;
-  let hi = state.duration;
-  for (const s of state.speeds) {
-    if (s === item) continue;
-    if (s.end <= item.start) lo = Math.max(lo, s.end);
-    if (s.start >= item.end) hi = Math.min(hi, s.start);
-  }
-  return { lo, hi };
+// ---- text / emoji bars (all in output time) ----
+const outRange = (item) => ({ s: srcToOut(item.start), e: srcToOut(item.end) });
+function setOutRange(item, s, e) {
+  item.start = outToSrc(s, true);
+  item.end = outToSrc(e);
 }
 
-function dragBar(e, type, item, bar) {
+// Nearest snap point within SNAP_PX of output time o, or null.
+function snapTarget(o) {
+  const pps = pxPerSec();
+  const targets = [...pieceEdgesOut(), outNow()];
+  let best = null;
+  for (const t of targets) {
+    if (Math.abs(t - o) * pps <= SNAP_PX && (best === null || Math.abs(t - o) < Math.abs(best - o))) best = t;
+  }
+  return best;
+}
+
+function showSnap(o) {
+  if (o === null) {
+    snapLine.hidden = true;
+    return;
+  }
+  snapLine.hidden = false;
+  snapLine.style.left = `${o * pxPerSec()}px`;
+}
+
+function dragBar(e, item, bar) {
   e.preventDefault();
   e.stopPropagation();
   const mode = e.target.classList.contains('l') ? 'l' : e.target.classList.contains('r') ? 'r' : 'move';
-  state.selected = { type, id: item.id };
-  emit();
+  select('text', item.id);
 
   const px = e.clientX;
-  const s0 = item.start;
-  const e0 = item.end;
-  const { lo, hi } = type === 'speed' ? speedBounds(item) : { lo: 0, hi: state.duration };
+  const { s: s0, e: e0 } = outRange(item);
+  const total = outDuration();
   bar.setPointerCapture(e.pointerId);
 
   const move = (ev) => {
     const dt = (ev.clientX - px) / pxPerSec();
+    let s = s0;
+    let en = e0;
+    let snapped = null;
     if (mode === 'move') {
       const len = e0 - s0;
-      item.start = clamp(s0 + dt, lo, hi - len);
-      item.end = item.start + len;
+      s = clamp(s0 + dt, 0, total - len);
+      const a = snapTarget(s);
+      const b = snapTarget(s + len);
+      if (a !== null && (b === null || Math.abs(a - s) <= Math.abs(b - s - len))) { s = a; snapped = a; }
+      else if (b !== null) { s = b - len; snapped = b; }
+      s = clamp(s, 0, total - len);
+      en = s + len;
     } else if (mode === 'l') {
-      item.start = clamp(s0 + dt, lo, e0 - MIN_LEN);
+      s = clamp(s0 + dt, 0, e0 - MIN_LEN);
+      const a = snapTarget(s);
+      if (a !== null && a < e0 - MIN_LEN) { s = a; snapped = a; }
     } else {
-      item.end = clamp(e0 + dt, s0 + MIN_LEN, hi);
+      en = clamp(e0 + dt, s0 + MIN_LEN, total);
+      const b = snapTarget(en);
+      if (b !== null && b > s0 + MIN_LEN) { en = b; snapped = b; }
     }
+    showSnap(snapped);
+    setOutRange(item, s, en);
     emit();
   };
   const up = () => {
+    showSnap(null);
     bar.removeEventListener('pointermove', move);
     bar.removeEventListener('pointerup', up);
   };
@@ -220,46 +345,61 @@ function dragBar(e, type, item, bar) {
 
 // ---- keyboard ----
 
-function seekTo(t) {
-  video.currentTime = clamp(t, 0, state.duration);
-}
-
-// Playhead slider: arrows step 0.1s (Shift 1s), , and . step one frame, Home/End.
+// Playhead slider (output time): arrows 0.1s (Shift 1s), , and . one frame, Home/End.
 function onRulerKey(e) {
-  const t = video.currentTime;
+  const o = outNow();
   const big = e.shiftKey ? 1 : 0.1;
   const keys = {
-    ArrowLeft: t - big, ArrowDown: t - big, ArrowRight: t + big, ArrowUp: t + big,
-    ',': t - FRAME, '.': t + FRAME, Home: 0, End: state.duration,
+    ArrowLeft: o - big, ArrowDown: o - big, ArrowRight: o + big, ArrowUp: o + big,
+    ',': o - FRAME, '.': o + FRAME, Home: 0, End: outDuration(),
   };
   if (!(e.key in keys)) return;
   e.preventDefault();
-  seekTo(keys[e.key]);
+  seekOut(keys[e.key]);
 }
 
-// Bars: arrows move (Shift = 1s steps), Ctrl+arrows stretch or shrink the end,
+// Text/emoji bars: arrows move (Shift = 1s), Ctrl+arrows stretch or shrink the end,
 // [ and ] set the start or end to the playhead, Enter jumps the playhead to the start.
-function onBarKey(e, type, item) {
-  const { lo, hi } = type === 'speed' ? speedBounds(item) : { lo: 0, hi: state.duration };
+function onBarKey(e, item) {
+  const total = outDuration();
+  const { s, e: en } = outRange(item);
   const step = e.shiftKey ? 1 : 0.1;
   const dir = e.key === 'ArrowLeft' ? -1 : e.key === 'ArrowRight' ? 1 : 0;
-  const t = video.currentTime;
+  const o = outNow();
 
   if (dir && (e.ctrlKey || e.metaKey)) {
-    item.end = clamp(item.end + dir * step, item.start + MIN_LEN, hi);
+    setOutRange(item, s, clamp(en + dir * step, s + MIN_LEN, total));
   } else if (dir) {
-    const len = item.end - item.start;
-    item.start = clamp(item.start + dir * step, lo, hi - len);
-    item.end = item.start + len;
+    const len = en - s;
+    const ns = clamp(s + dir * step, 0, total - len);
+    setOutRange(item, ns, ns + len);
   } else if (e.key === '[') {
-    item.start = clamp(t, lo, item.end - MIN_LEN);
+    setOutRange(item, clamp(o, 0, en - MIN_LEN), en);
   } else if (e.key === ']') {
-    item.end = clamp(t, item.start + MIN_LEN, hi);
+    setOutRange(item, s, clamp(o, s + MIN_LEN, total));
   } else if (e.key === 'Enter') {
-    seekTo(item.start);
+    seekOut(s);
+    return;
   } else {
     return;
   }
   e.preventDefault();
   emit();
 }
+
+// Clip pieces: Enter jumps the playhead to the piece, arrows move to the next piece.
+// Delete (handled in main.js) removes the selected piece.
+function onPieceKey(e, p) {
+  const list = pieces();
+  const i = list.indexOf(p);
+  if (e.key === 'Enter') {
+    seekOut(srcToOut(p.start));
+  } else if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+    const next = list[i + (e.key === 'ArrowRight' ? 1 : -1)];
+    if (next) bars.get(`clip:${next.id}`)?.focus();
+  } else {
+    return;
+  }
+  e.preventDefault();
+}
+

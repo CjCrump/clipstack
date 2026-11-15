@@ -1,9 +1,9 @@
 // Entry point: wires the modules to the page and runs the render loop.
 
-import { state, emit, uid, clampBoxes, rateAt, OUT_W } from './state.js';
+import { state, emit, uid, clampBoxes, rateAt, pieceAt, nextKept, pieces, srcToOut, outDuration, MIN_PIECE, OUT_W } from './state.js';
 import { initCropBoxes, layout } from './cropBoxes.js';
 import { initPreview, drawPreview } from './preview.js';
-import { initTimeline, updatePlayhead } from './timeline.js';
+import { initTimeline, updatePlayhead, zoomBy, zoomFit } from './timeline.js';
 import { initPanel, deleteSelected } from './panel.js';
 import { exportMp4, ExportError } from './exportMp4.js';
 import { buildFilter, buildCommand, safeFileName } from './exportFfmpeg.js';
@@ -11,6 +11,7 @@ import { initLoader, canExportInBrowser } from './loader.js';
 import { emojiReady } from './emoji.js';
 import { buildEmojiPicker } from './emojiPicker.js';
 import { initHints } from './hints.js';
+import { initHistory, resetHistory, undo, redo, canUndo, canRedo, onHistoryChange } from './history.js';
 
 const $ = (id) => document.getElementById(id);
 const video = $('video');
@@ -27,6 +28,16 @@ initPreview(canvas, video);
 initTimeline($('timeline'), video);
 initPanel($('panel'), { onChangeEmoji: changeEmoji });
 initHints();
+initHistory();
+
+// ---- undo / redo buttons ----
+const syncHistoryButtons = () => {
+  $('undoBtn').disabled = !state.duration || !canUndo();
+  $('redoBtn').disabled = !state.duration || !canRedo();
+};
+onHistoryChange(syncHistoryButtons);
+$('undoBtn').addEventListener('click', undo);
+$('redoBtn').addEventListener('click', redo);
 
 // ---- quick start strip ----
 // Shown until closed. Closing it is the one thing Clipstack saves in your browser.
@@ -80,7 +91,7 @@ video.addEventListener('loadedmetadata', () => {
     srcH: video.videoHeight,
     duration: video.duration,
     texts: [],
-    speeds: [],
+    clips: [{ id: uid(), start: 0, end: video.duration, rate: 1 }],
     selected: null,
   });
   state.boxA = { x: DEFAULT_A.x * sx, y: DEFAULT_A.y * sy, w: DEFAULT_A.w * sx };
@@ -88,10 +99,12 @@ video.addEventListener('loadedmetadata', () => {
   clampBoxes();
   $('stage').classList.add('ready');
   $('emptyMsg').hidden = true;
-  ['addText', 'addEmoji', 'addSpeed', 'exportFfmpeg', 'playBtn'].forEach((id) => { $(id).disabled = false; });
+  ['addText', 'addEmoji', 'splitBtn', 'exportFfmpeg', 'playBtn', 'zoomIn', 'zoomOut', 'zoomFit'].forEach((id) => { $(id).disabled = false; });
   $('exportBrowser').disabled = !canExportInBrowser();
   layout();
+  zoomFit();
   emit();
+  resetHistory();
 });
 
 // ---- adding items at the playhead ----
@@ -135,36 +148,83 @@ function changeEmoji(item) {
   });
 }
 
-$('addSpeed').addEventListener('click', () => {
+// ---- split ----
+// Cuts the piece under the playhead in two. Both halves keep its speed.
+function splitAtPlayhead() {
   const t = video.currentTime;
-  if (rateAt(t) !== 1) return; // already inside a speed segment
-  const next = state.speeds.filter((s) => s.start > t).reduce((m, s) => Math.min(m, s.start), state.duration);
-  const end = Math.min(next, t + 3);
-  if (end - t < 0.1) return;
-  const item = { id: uid(), start: t, end, rate: 4 };
-  state.speeds.push(item);
-  state.selected = { type: 'speed', id: item.id };
+  const p = pieceAt(t);
+  if (!p || t - p.start < MIN_PIECE || p.end - t < MIN_PIECE) {
+    showStatus('Move the playhead inside a piece, at least 0.1s from its edges, to split there.');
+    return;
+  }
+  const right = { id: uid(), start: t, end: p.end, rate: p.rate };
+  p.end = t;
+  state.clips.push(right);
+  state.selected = { type: 'clip', id: right.id };
   emit();
-});
+}
+$('splitBtn').addEventListener('click', splitAtPlayhead);
+
+let statusTimer = 0;
+function showStatus(msg) {
+  const n = $('notice');
+  n.textContent = msg;
+  n.className = 'notice info';
+  n.hidden = false;
+  clearTimeout(statusTimer);
+  statusTimer = setTimeout(() => { n.hidden = true; }, 4000);
+}
+
+$('zoomIn').addEventListener('click', () => zoomBy(1.5));
+$('zoomOut').addEventListener('click', () => zoomBy(1 / 1.5));
+$('zoomFit').addEventListener('click', zoomFit);
 
 // ---- playback ----
 function togglePlay() {
-  if (video.paused) video.play();
-  else video.pause();
+  if (!video.paused) {
+    video.pause();
+    return;
+  }
+  // at the end of the last piece (or in a cut after it), start over from the top
+  const t = nextKept(video.currentTime);
+  if (t === null || srcToOut(video.currentTime) >= outDuration() - 0.02) video.currentTime = pieces()[0].start;
+  else video.currentTime = t;
+  video.play();
 }
 $('playBtn').addEventListener('click', togglePlay);
 video.addEventListener('play', () => { $('playBtn').textContent = 'Pause'; });
 video.addEventListener('pause', () => { $('playBtn').textContent = 'Play'; });
 
 document.addEventListener('keydown', (e) => {
-  if (!modal.hidden) return; // the dialog handles its own keys
+  if (!modal.hidden || !state.duration || state.exporting) return; // the dialog handles its own keys
+  const ctrl = e.ctrlKey || e.metaKey;
+  const typing = e.target.closest('input, textarea, select');
+
+  // Ctrl + / - / 0 zoom the timeline instead of the page
+  if (ctrl && !e.altKey && ['=', '+', '-', '_', '0'].includes(e.key)) {
+    e.preventDefault();
+    if (e.key === '0') zoomFit();
+    else zoomBy(e.key === '-' || e.key === '_' ? 1 / 1.5 : 1.5);
+    return;
+  }
+  // Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y, except inside a text field, which has its own undo
+  if (ctrl && !typing && ['z', 'y'].includes(e.key.toLowerCase())) {
+    e.preventDefault();
+    if (e.key.toLowerCase() === 'y' || e.shiftKey) redo();
+    else undo();
+    return;
+  }
+
   // fields type text; buttons and links use Space/Enter themselves
-  if (e.target.closest('input, textarea, select, button, a') || !state.duration || state.exporting) return;
+  if (typing || e.target.closest('button, a') || ctrl || e.altKey) return;
   if (e.code === 'Space') {
     e.preventDefault();
     togglePlay();
   } else if (e.key === 'Delete' || e.key === 'Backspace') {
     deleteSelected();
+  } else if (e.key === 's' || e.key === 'S') {
+    e.preventDefault();
+    splitAtPlayhead();
   }
 });
 
@@ -294,12 +354,22 @@ $('exportFfmpeg').addEventListener('click', async () => {
 // ---- render loop ----
 const timeLabel = $('timeLabel');
 function frame() {
-  const t = video.currentTime;
+  let t = video.currentTime;
+  // playing into a deleted piece jumps over it; past the last piece, stop
+  if (!video.paused && !pieceAt(t)) {
+    const next = nextKept(t);
+    if (next === null) {
+      video.pause();
+    } else {
+      video.currentTime = next;
+      t = next;
+    }
+  }
   const r = rateAt(t);
   if (video.playbackRate !== r) video.playbackRate = r;
   drawPreview();
   updatePlayhead(t);
-  timeLabel.textContent = `${t.toFixed(2)} / ${(state.duration || 0).toFixed(2)}`;
+  timeLabel.textContent = `${srcToOut(t).toFixed(2)} / ${outDuration().toFixed(2)}`; // finished-video time
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);

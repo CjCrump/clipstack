@@ -15,8 +15,11 @@ export const state = {
   // Emoji: { id, kind: 'emoji', file, label, ... }. Both share x, y (centre), size,
   // start, end and anim, so selecting, dragging and the timeline treat them the same.
   texts: [], // { id, kind?, text | file+label, x, y, size, start, end, anim }
-  speeds: [], // { id, start, end, rate }
-  selected: null, // { type: 'text' | 'speed', id }
+  // The kept pieces of the source clip, in source seconds, in order and never
+  // overlapping. Starts as one piece; Split cuts one in two, Delete removes one
+  // (that part of the clip is skipped), and each piece has its own speed.
+  clips: [], // { id, start, end, rate }
+  selected: null, // { type: 'text' | 'clip', id }
   exporting: false,
 };
 
@@ -49,59 +52,74 @@ export function clampBoxes() {
 export function getSelected() {
   const s = state.selected;
   if (!s) return null;
-  const list = s.type === 'text' ? state.texts : state.speeds;
+  const list = s.type === 'text' ? state.texts : state.clips;
   return list.find((i) => i.id === s.id) || null;
 }
 
-// ---- speed segments ----
-export const sortedSpeeds = () => [...state.speeds].sort((a, b) => a.start - b.start);
+// ---- clip pieces and time ----
+// Source time = seconds in the original file. Output time = seconds in the
+// finished video, after deleted pieces are skipped and speeds applied.
+
+export const MIN_PIECE = 0.1;
+export const pieces = () => [...state.clips].sort((a, b) => a.start - b.start);
+
+// The piece that plays at source time t, or null if t is in a deleted part.
+export function pieceAt(t) {
+  return state.clips.find((p) => t >= p.start && t < p.end) || null;
+}
 
 export function rateAt(t) {
-  for (const s of state.speeds) if (t >= s.start && t < s.end) return s.rate;
-  return 1;
+  return pieceAt(t)?.rate || 1;
 }
 
-// Source time -> output time, after speed segments are applied.
+// Where playback should go from source time t: t itself if it's kept, otherwise
+// the start of the next kept piece (null when nothing is left after t).
+export function nextKept(t) {
+  if (pieceAt(t)) return t;
+  const next = pieces().find((p) => p.start >= t);
+  return next ? next.start : null;
+}
+
+// Source time -> output time. Times inside a deleted part map to where the cut is.
 export function srcToOut(t) {
   let out = 0;
-  let cur = 0;
-  for (const s of sortedSpeeds()) {
-    if (t <= s.start) break;
-    out += s.start - cur;
-    if (t < s.end) return out + (t - s.start) / s.rate;
-    out += (s.end - s.start) / s.rate;
-    cur = s.end;
+  for (const p of pieces()) {
+    if (t <= p.start) return out;
+    if (t < p.end) return out + (t - p.start) / p.rate;
+    out += (p.end - p.start) / p.rate;
   }
-  return out + (t - cur);
+  return out;
 }
 
-// Output time -> source time (the reverse of srcToOut).
-export function outToSrc(o) {
+// Output time -> source time. At the exact edge between two pieces, `next`
+// picks the start of the later piece instead of the end of the earlier one.
+export function outToSrc(o, next = false) {
   let out = 0;
-  let cur = 0;
-  for (const s of sortedSpeeds()) {
-    const gap = s.start - cur;
-    if (o <= out + gap) return cur + (o - out);
-    out += gap;
-    const segOut = (s.end - s.start) / s.rate;
-    if (o <= out + segOut) return s.start + (o - out) * s.rate;
-    out += segOut;
-    cur = s.end;
+  const list = pieces();
+  for (const p of list) {
+    const len = (p.end - p.start) / p.rate;
+    if (next ? o < out + len : o <= out + len) return p.start + Math.max(0, o - out) * p.rate;
+    out += len;
   }
-  return cur + (o - out);
+  return list.length ? list[list.length - 1].end : 0;
 }
 
-// Every stretch of the clip with its playback rate, gaps filled with 1x.
-export function buildSegments() {
-  const segs = [];
-  let cur = 0;
-  for (const s of sortedSpeeds()) {
-    if (s.start > cur) segs.push({ start: cur, end: s.start, rate: 1 });
-    segs.push({ start: s.start, end: s.end, rate: s.rate });
-    cur = s.end;
+export const outDuration = () => srcToOut(state.duration);
+
+// Output-time edges of every piece: the snap points for text and emoji.
+export function pieceEdgesOut() {
+  const edges = [0];
+  let out = 0;
+  for (const p of pieces()) {
+    out += (p.end - p.start) / p.rate;
+    edges.push(out);
   }
-  if (cur < state.duration) segs.push({ start: cur, end: state.duration, rate: 1 });
-  return segs.filter((s) => s.end - s.start > 0.01);
+  return edges;
+}
+
+// The kept pieces as segments for the exporters.
+export function buildSegments() {
+  return pieces().filter((p) => p.end - p.start > 0.01).map(({ start, end, rate }) => ({ start, end, rate }));
 }
 
 // ---- text animation (same curve the ffmpeg export uses) ----
