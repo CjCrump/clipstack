@@ -1,7 +1,7 @@
 // Builds an ffmpeg filter script + command that renders exactly what the preview shows.
 // The filter lives in its own file so the command works the same in PowerShell, cmd and bash.
 
-import { state, OUT_W, OUT_H, box, boxH, slotH, srcToOut, buildSegments, fadeTime } from './state.js';
+import { state, OUT_W, OUT_H, HOR_W, HOR_H, box, boxH, slotH, srcToOut, buildSegments, fadeTime, placeIn } from './state.js';
 
 const even = (n) => Math.max(2, Math.round(n / 2) * 2);
 const f = (n) => Number(n.toFixed(3));
@@ -46,7 +46,7 @@ function escapeFontPath(p) {
   return p.replace(/\\/g, '/').replace(/:/g, '\\:');
 }
 
-function drawtext(tx, fontPath) {
+function drawtext(tx, fontPath, fmt) {
   const T = f(srcToOut(tx.start));
   const D = f(srcToOut(tx.end) - srcToOut(tx.start));
   const S = Math.round(num(tx.size, 10, 600, 160));
@@ -61,8 +61,10 @@ function drawtext(tx, fontPath) {
 
   // The trailing space stops slanted fonts (Bangers) clipping their last letter.
   const text = cleanText(tx.text);
-  const x = f(num(tx.x, 0, OUT_W, OUT_W / 2));
-  const y = f(num(tx.y, 0, OUT_H, OUT_H / 2));
+  const [W, H] = fmt === 'h' ? [HOR_W, HOR_H] : [OUT_W, OUT_H];
+  const at = placeIn(tx, fmt);
+  const x = f(num(at.x, 0, W, W / 2));
+  const y = f(num(at.y, 0, H, H / 2));
 
   return `drawtext=fontfile='${escapeFontPath(fontPath)}':expansion=none:text='${text} '` +
     `:fontsize='${size}':fontcolor=white:borderw=${Math.max(1, Math.round(S / 16))}:bordercolor=black` +
@@ -70,7 +72,8 @@ function drawtext(tx, fontPath) {
     `:enable='between(t\\,${T}\\,${f(T + D)})'`;
 }
 
-export function buildFilter(fontPath) {
+// fmt: 'v' vertical (crops stacked) or 'h' horizontal (the whole clip)
+export function buildFilter(fontPath, fmt = 'v') {
   const segs = buildSegments();
   const lines = [];
 
@@ -87,26 +90,33 @@ export function buildFilter(fontPath) {
   const ins = segs.map((_, i) => `[v${i}][a${i}]`).join('');
   lines.push(`${ins}concat=n=${segs.length}:v=1:a=1[cv][a]`);
 
-  const topH = even(slotH('A'));
-  lines.push('[cv]fps=30,split[sa][sb]');
-  lines.push(`[sa]${cropFor('A')},scale=${OUT_W}:${topH},setsar=1[top]`);
-  lines.push(`[sb]${cropFor('B')},scale=${OUT_W}:${OUT_H - topH},setsar=1[bot]`);
-
   // ffmpeg runs on the user's computer and can't see the emoji images, so emoji are left out
   const texts = state.texts
     .filter((t) => t.kind !== 'emoji')
     .filter((t) => srcToOut(t.end) - srcToOut(t.start) > 0.02) // skip text inside a deleted piece
     .sort((a, b) => a.start - b.start);
-  const chain = texts.map((t) => drawtext(t, fontPath));
-  lines.push(`[top][bot]vstack${chain.length ? ',' + chain.join(',') : ''}[v]`);
+  const chain = texts.map((t) => drawtext(t, fontPath, fmt));
+  const tail = chain.length ? ',' + chain.join(',') : '';
+
+  if (fmt === 'h') {
+    // the whole clip in a 1920x1080 frame, black bars if the clip isn't 16:9
+    lines.push(`[cv]fps=30,scale=${HOR_W}:${HOR_H}:force_original_aspect_ratio=decrease,` +
+      `pad=${HOR_W}:${HOR_H}:(ow-iw)/2:(oh-ih)/2,setsar=1${tail}[v]`);
+  } else {
+    const topH = even(slotH('A'));
+    lines.push('[cv]fps=30,split[sa][sb]');
+    lines.push(`[sa]${cropFor('A')},scale=${OUT_W}:${topH},setsar=1[top]`);
+    lines.push(`[sb]${cropFor('B')},scale=${OUT_W}:${OUT_H - topH},setsar=1[bot]`);
+    lines.push(`[top][bot]vstack${tail}[v]`);
+  }
 
   return lines.join(';\n') + '\n';
 }
 
 // The command uses the safe name; if it differs, the user renames the file first.
-export function buildCommand(filterFile = 'filter.txt') {
+export function buildCommand(filterFile = 'filter_vertical.txt', suffix = 'vertical') {
   const input = safeFileName(state.fileName);
-  const out = `${input.replace(/\.[^.]+$/, '')}_vertical.mp4`;
+  const out = `${input.replace(/\.[^.]+$/, '')}_${suffix}.mp4`;
   return `ffmpeg -y -i "${input}" -/filter_complex ${filterFile} -map "[v]" -map "[a]" ` +
     `-c:v libx264 -preset slow -crf 18 -c:a aac -b:a 160k -movflags +faststart "${out}"`;
 }

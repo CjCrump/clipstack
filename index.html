@@ -76,10 +76,15 @@
 
   <main class="workspace">
     <section class="pane source-pane">
-      <div class="pane-title">Source <span id="splitReadout" class="muted"></span></div>
+      <div class="pane-title">Horizontal <span class="muted">1920×1080</span>
+        <span class="muted">· vertical split</span> <span id="splitReadout" class="muted"></span>
+        <button id="boxesToggle" class="btn small" type="button" aria-pressed="false" disabled
+          data-hint="Hide the Top and Bottom crop boxes to see and place text and emoji on the clean horizontal frame. The boxes only shape the vertical video."
+          data-hint-disabled="Load a clip first.">Hide boxes</button></div>
       <div id="sourceWrap" class="source-wrap">
         <div id="stage" class="stage">
           <video id="video" playsinline preload="auto"></video>
+          <canvas id="srcLayer" class="src-layer" aria-hidden="true"></canvas>
           <div id="overlay" class="overlay"></div>
         </div>
         <div id="emptyMsg" class="empty">
@@ -92,7 +97,7 @@
     </section>
 
     <section class="pane preview-pane">
-      <div class="pane-title">Preview <span class="muted">1080×1920</span></div>
+      <div class="pane-title">Vertical <span class="muted">1080×1920</span></div>
       <div class="preview-wrap"><canvas id="preview" width="1080" height="1920" tabindex="0" data-hint-focus="only"
         data-hint="Your finished video. With a text or emoji selected, arrows move it and + and - resize it."
         aria-label="9 by 16 preview" aria-describedby="previewKeysHelp"></canvas></div>

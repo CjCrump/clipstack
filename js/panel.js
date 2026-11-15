@@ -1,7 +1,7 @@
 // Properties panel for the selected text, emoji or speed segment.
 // Rebuilt only when the selection changes so typing never loses focus.
 
-import { state, emit, subscribe, getSelected, pieces } from './state.js';
+import { state, emit, subscribe, getSelected, pieces, OUT_W, OUT_H, srcToOut, outToSrc, outDuration } from './state.js';
 import { MAX_TEXT } from './exportFfmpeg.js';
 import { emojiUrl } from './emoji.js';
 
@@ -9,20 +9,20 @@ const RATES = [1, 1.5, 2, 3, 4, 8];
 
 const SIZE_TEXT = 'Letter height in pixels, 30 to 400.';
 const SIZE_EMOJI = 'Width and height in pixels, 30 to 400.';
-const START_HINT = 'When it appears, in seconds of your original clip.';
-const END_HINT = 'When it disappears, in seconds of your original clip.';
+const START_HINT = 'When it appears, in seconds of the finished video (what the timeline shows).';
+const END_HINT = 'When it disappears, in seconds of the finished video.';
 const DELETE_HINT = 'Remove it. The Delete key does the same.';
 
 // Position, size, timing and animation: the same for text and emoji
 const placeFields = (sizeHint) => `
       <div class="row">
-        <label data-hint="Centre of it, across. 0 is the left edge, 1080 the right.">X <input data-k="x" type="number" min="0" max="1080" step="10"></label>
-        <label data-hint="Centre of it, down. 0 is the top, 1920 the bottom.">Y <input data-k="y" type="number" min="0" max="1920" step="10"></label>
+        <label data-hint="Centre of it, across: 0% is the left edge, 100% the right. The same spot in the vertical and horizontal video.">X (%) <input data-k="xp" type="number" min="0" max="100" step="1"></label>
+        <label data-hint="Centre of it, down: 0% is the top, 100% the bottom. The same spot in the vertical and horizontal video.">Y (%) <input data-k="yp" type="number" min="0" max="100" step="1"></label>
       </div>
       <label data-hint="${sizeHint}">Size <input data-k="size" type="number" min="30" max="400" step="2"></label>
       <div class="row">
-        <label data-hint="${START_HINT}">Start (s) <input data-k="start" type="number" step="0.05" min="0"></label>
-        <label data-hint="${END_HINT}">End (s) <input data-k="end" type="number" step="0.05" min="0"></label>
+        <label data-hint="${START_HINT}">Start (s) <input data-k="so" type="number" step="0.05" min="0"></label>
+        <label data-hint="${END_HINT}">End (s) <input data-k="eo" type="number" step="0.05" min="0"></label>
       </div>
       <label data-hint="Pop bounces it in. Either way it fades out at the end.">Animation
         <select data-k="anim"><option value="pop">Pop</option><option value="none">None</option></select>
@@ -93,10 +93,21 @@ ${placeFields(SIZE_TEXT)}
       const v = numeric ? parseFloat(input.value) : input.value;
       if (numeric && Number.isNaN(v)) return;
       it[k] = k === 'text' ? v.slice(0, MAX_TEXT) : v;
-      if (k === 'start' || k === 'end') it[k] = Math.min(state.duration, Math.max(0, it[k]));
+      // Start/End are shown in finished-video seconds; stored in source seconds
+      if (k === 'so' || k === 'eo') {
+        delete it[k];
+        const o = Math.min(outDuration(), Math.max(0, v));
+        if (k === 'so') it.start = outToSrc(o, true);
+        else it.end = outToSrc(o);
+      }
       if (k === 'size') it.size = Math.min(400, Math.max(30, it.size));
-      if (k === 'x') it.x = Math.min(1080, Math.max(0, it.x));
-      if (k === 'y') it.y = Math.min(1920, Math.max(0, it.y));
+      // X/Y are shown as % of the frame; stored in vertical-frame pixels (see placeIn)
+      if (k === 'xp' || k === 'yp') {
+        delete it[k];
+        const pct = Math.min(100, Math.max(0, v));
+        if (k === 'xp') it.x = (pct / 100) * OUT_W;
+        else it.y = (pct / 100) * OUT_H;
+      }
       if (it.end <= it.start) it.end = it.start + 0.1;
       emit();
     });
@@ -108,10 +119,17 @@ function sync(item) {
   if (!item) return;
   root.querySelectorAll('[data-k]').forEach((input) => {
     if (input === document.activeElement) return;
-    const v = item[input.dataset.k];
     const k = input.dataset.k;
-    if (k === 'x' || k === 'y') input.value = Math.round(v);
-    else input.value = typeof v === 'number' && k !== 'rate' && k !== 'size' ? v.toFixed(2) : v;
+    if (k === 'xp' || k === 'yp') {
+      input.value = Math.round(k === 'xp' ? (item.x / OUT_W) * 100 : (item.y / OUT_H) * 100);
+      return;
+    }
+    if (k === 'so' || k === 'eo') {
+      input.value = srcToOut(k === 'so' ? item.start : item.end).toFixed(2);
+      return;
+    }
+    const v = item[k];
+    input.value = typeof v === 'number' && k !== 'rate' && k !== 'size' ? v.toFixed(2) : v;
   });
 }
 

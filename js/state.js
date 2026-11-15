@@ -1,7 +1,17 @@
 // Shared app state, change notifications, and time/geometry helpers.
 
-export const OUT_W = 1080;
+export const OUT_W = 1080; // vertical output
 export const OUT_H = 1920;
+export const HOR_W = 1920; // horizontal output
+export const HOR_H = 1080;
+
+// Text and emoji are placed once. Their x/y are stored in vertical-frame pixels
+// and land at the same share of the frame in the horizontal video (50% across
+// is 50% across in both). Size is in pixels and reads the same in both, since
+// each frame is 1080 on its short side.
+export function placeIn(item, fmt) {
+  return fmt === 'h' ? { x: (item.x * HOR_W) / OUT_W, y: (item.y * HOR_H) / OUT_H } : { x: item.x, y: item.y };
+}
 
 export const state = {
   fileName: 'clip.mp4',

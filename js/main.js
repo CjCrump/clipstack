@@ -3,6 +3,7 @@
 import { state, emit, uid, clampBoxes, rateAt, pieceAt, nextKept, pieces, srcToOut, outDuration, MIN_PIECE, OUT_W } from './state.js';
 import { initCropBoxes, layout } from './cropBoxes.js';
 import { initPreview, drawPreview } from './preview.js';
+import { initSourceLayer, drawSourceLayer } from './sourceLayer.js';
 import { initTimeline, updatePlayhead, zoomBy, zoomFit } from './timeline.js';
 import { initPanel, deleteSelected } from './panel.js';
 import { exportMp4, ExportError } from './exportMp4.js';
@@ -25,6 +26,7 @@ const DEFAULT_B = { x: 36, y: 730, w: 562 };
 
 initCropBoxes({ stage: $('stage'), overlay: $('overlay'), wrap: $('sourceWrap'), readout: $('splitReadout') });
 initPreview(canvas, video);
+initSourceLayer({ stage: $('stage'), canvas: $('srcLayer'), video, toggle: $('boxesToggle') });
 initTimeline($('timeline'), video);
 initPanel($('panel'), { onChangeEmoji: changeEmoji });
 initHints();
@@ -99,7 +101,7 @@ video.addEventListener('loadedmetadata', () => {
   clampBoxes();
   $('stage').classList.add('ready');
   $('emptyMsg').hidden = true;
-  ['addText', 'addEmoji', 'splitBtn', 'exportFfmpeg', 'playBtn', 'zoomIn', 'zoomOut', 'zoomFit'].forEach((id) => { $(id).disabled = false; });
+  ['addText', 'addEmoji', 'splitBtn', 'exportFfmpeg', 'playBtn', 'zoomIn', 'zoomOut', 'zoomFit', 'boxesToggle'].forEach((id) => { $(id).disabled = false; });
   $('exportBrowser').disabled = !canExportInBrowser();
   layout();
   zoomFit();
@@ -279,9 +281,36 @@ $('keysBtn').addEventListener('click', () => {
 $('loadBtn').addEventListener('click', () => $('fileInput').click());
 
 // ---- exports ----
-$('exportBrowser').addEventListener('click', async () => {
+// Export asks which videos to make; the choice is remembered while the page is open.
+const exportChoice = { v: true, h: true };
+
+$('exportBrowser').addEventListener('click', () => {
   if (!sourceFile) return;
   video.pause();
+  openModal('Export MP4', `
+    <fieldset class="export-pick">
+      <legend>Which videos?</legend>
+      <label data-hint="1080×1920 with the Top and Bottom crops stacked. For Shorts, Reels and TikTok.">
+        <input type="checkbox" id="pickV"> Vertical <span class="muted">1080×1920</span></label>
+      <label data-hint="1920×1080, the whole clip with the same cuts, speeds, text and emoji. For regular YouTube.">
+        <input type="checkbox" id="pickH"> Horizontal <span class="muted">1920×1080</span></label>
+    </fieldset>
+    <p class="muted">Both come from one pass over your clip. If your browser asks to allow multiple downloads, say yes.</p>
+    <div class="modal-actions"><button class="btn primary" id="startExport">Export</button></div>`);
+  $('pickV').checked = exportChoice.v;
+  $('pickH').checked = exportChoice.h;
+  const sync = () => {
+    exportChoice.v = $('pickV').checked;
+    exportChoice.h = $('pickH').checked;
+    $('startExport').disabled = !exportChoice.v && !exportChoice.h;
+  };
+  $('pickV').addEventListener('change', sync);
+  $('pickH').addEventListener('change', sync);
+  sync();
+  $('startExport').addEventListener('click', () => runExport(['v', 'h'].filter((f) => exportChoice[f])));
+});
+
+async function runExport(formats) {
   const controller = new AbortController();
   openModal('Exporting MP4', `
     <p id="exportLabel" class="muted">Starting…</p>
@@ -294,17 +323,25 @@ $('exportBrowser').addEventListener('click', async () => {
   try {
     await fontReady; // never bake a fallback font into the video
     await emojiReady(state.texts.filter((t) => t.kind === 'emoji').map((t) => t.file)); // or a missing emoji
-    const blob = await exportMp4({
+    const blobs = await exportMp4({
       file: sourceFile,
+      formats,
       signal: controller.signal,
       onProgress: (p, label) => {
         $('bar').style.width = `${Math.min(100, p * 100)}%`;
         $('exportLabel').textContent = label;
       },
     });
-    download(blob, `${state.fileName.replace(/\.[^.]+$/, '')}_vertical.mp4`);
+    const base = state.fileName.replace(/\.[^.]+$/, '');
+    const names = { v: 'vertical', h: 'horizontal' };
+    const done = [];
+    for (const f of formats) {
+      download(blobs[f], `${base}_${names[f]}.mp4`);
+      done.push(`${names[f]} (${(blobs[f].size / 1e6).toFixed(1)} MB)`);
+    }
     const secs = ((performance.now() - started) / 1000).toFixed(1);
-    openModal('Done', `<p>Your MP4 downloaded (${(blob.size / 1e6).toFixed(1)} MB, took ${secs}s).</p>`);
+    openModal('Done', '<p id="doneMsg"></p>');
+    $('doneMsg').textContent = `Downloaded ${done.join(' and ')} in ${secs}s.`;
   } catch (err) {
     if (err.name === 'AbortError') {
       closeModal();
@@ -316,7 +353,7 @@ $('exportBrowser').addEventListener('click', async () => {
   } finally {
     state.exporting = false;
   }
-});
+}
 
 function download(blob, name) {
   const a = document.createElement('a');
@@ -327,28 +364,44 @@ function download(blob, name) {
 }
 
 $('exportFfmpeg').addEventListener('click', async () => {
-  download(new Blob([buildFilter(FONT_FILE)], { type: 'text/plain' }), 'filter.txt');
+  // one filter file and command per video, for whichever the export dialog has ticked
+  const picks = [['v', 'vertical'], ['h', 'horizontal']].filter(([f]) => exportChoice[f]);
+  if (!picks.length) picks.push(['v', 'vertical']);
+  for (const [f, name] of picks) {
+    download(new Blob([buildFilter(FONT_FILE, f)], { type: 'text/plain' }), `filter_${name}.txt`);
+  }
   const font = await fetch(`fonts/${FONT_FILE}`).then((r) => r.blob());
   download(font, FONT_FILE);
 
-  const cmd = buildCommand();
   const safeName = safeFileName(state.fileName);
+  const files = picks.map(([, name]) => `<b>filter_${name}.txt</b>`).join(', ');
   openModal('ffmpeg command', `
-    <p>Downloaded <b>filter.txt</b> and <b>${FONT_FILE}</b>. Put both in the same folder as
+    <p>Downloaded ${files} and <b>${FONT_FILE}</b>. Put them in the same folder as
       <b id="cmdFile"></b>, open a terminal there, and run:</p>
     <p id="renameNote" class="notice info" hidden></p>
-    <pre id="cmd"></pre>
+    <div id="cmds"></div>
     <p id="emojiNote" class="notice info" hidden>Emoji aren't included in the ffmpeg command. Use Export MP4 to keep them.</p>
-    <p class="muted">Needs ffmpeg 7 or newer.</p>
-    <button class="btn" id="copyCmd">Copy command</button>`);
+    <p class="muted">Needs ffmpeg 7 or newer. Tick Vertical or Horizontal in the Export MP4 dialog to choose which commands you get.</p>`);
   $('cmdFile').textContent = state.fileName;
   if (safeName !== state.fileName) {
     $('renameNote').hidden = false;
     $('renameNote').textContent = `First rename your clip to "${safeName}". Its name has characters a terminal could treat as code.`;
   }
   $('emojiNote').hidden = !state.texts.some((t) => t.kind === 'emoji');
-  $('cmd').textContent = cmd;
-  $('copyCmd').addEventListener('click', () => navigator.clipboard.writeText(cmd));
+  for (const [, name] of picks) {
+    const cmd = buildCommand(`filter_${name}.txt`, name);
+    const h = document.createElement('p');
+    h.className = 'cmd-label';
+    h.textContent = name[0].toUpperCase() + name.slice(1);
+    const pre = document.createElement('pre');
+    pre.textContent = cmd;
+    const copy = document.createElement('button');
+    copy.className = 'btn';
+    copy.textContent = `Copy ${name} command`;
+    copy.dataset.hint = 'Copy this command, paste it into a terminal opened in your clip\'s folder, and press Enter.';
+    copy.addEventListener('click', () => navigator.clipboard.writeText(cmd));
+    $('cmds').append(h, pre, copy);
+  }
 });
 
 // ---- render loop ----
@@ -368,6 +421,7 @@ function frame() {
   const r = rateAt(t);
   if (video.playbackRate !== r) video.playbackRate = r;
   drawPreview();
+  drawSourceLayer(t);
   updatePlayhead(t);
   timeLabel.textContent = `${srcToOut(t).toFixed(2)} / ${outDuration().toFixed(2)}`; // finished-video time
   requestAnimationFrame(frame);

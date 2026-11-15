@@ -4,7 +4,7 @@
 // time where the hardware allows, keeps exact timing, and works in Firefox 130+,
 // Chrome, Edge and Safari. Nothing leaves the browser.
 
-import { state, OUT_W, OUT_H, srcToOut, outToSrc, buildSegments } from './state.js';
+import { state, OUT_W, OUT_H, HOR_W, HOR_H, srcToOut, outToSrc, buildSegments } from './state.js';
 import { drawComposite } from './render.js';
 import { timeStretch } from './timeStretch.js';
 
@@ -16,14 +16,19 @@ const AAC_PATH = '../vendor/mediabunny/mediabunny-aac-encoder.min.mjs';
 
 export class ExportError extends Error {}
 
+const SIZES = { v: [OUT_W, OUT_H], h: [HOR_W, HOR_H] };
+
 /**
+ * Renders the vertical and/or horizontal video in one pass over the clip: each
+ * source frame is decoded once and drawn into every requested format.
  * @param {object} opts
  * @param {File} opts.file the source clip
+ * @param {('v'|'h')[]} opts.formats which videos to make
  * @param {(fraction: number, label: string) => void} opts.onProgress
  * @param {AbortSignal} opts.signal
- * @returns {Promise<Blob>} the finished MP4
+ * @returns {Promise<Record<string, Blob>>} one MP4 per format, keyed 'v' / 'h'
  */
-export async function exportMp4({ file, onProgress, signal }) {
+export async function exportMp4({ file, formats = ['v'], onProgress, signal }) {
   onProgress(0, 'Loading encoder…');
   const mb = await import(MB_PATH); // loaded only when someone exports
 
@@ -35,8 +40,11 @@ export async function exportMp4({ file, onProgress, signal }) {
   const audioTrack = await input.getPrimaryAudioTrack();
   const hasAudio = Boolean(audioTrack && (await audioTrack.canDecode()));
 
-  if (!(await mb.canEncodeVideo('avc', { width: OUT_W, height: OUT_H, bitrate: VIDEO_BITRATE }))) {
-    throw new ExportError("This browser can't encode H.264 (MP4) video. Update it, or use the ffmpeg command.");
+  for (const fmt of formats) {
+    const [width, height] = SIZES[fmt];
+    if (!(await mb.canEncodeVideo('avc', { width, height, bitrate: VIDEO_BITRATE }))) {
+      throw new ExportError("This browser can't encode H.264 (MP4) video. Update it, or use the ffmpeg command.");
+    }
   }
   if (hasAudio && !(await mb.canEncodeAudio('aac'))) {
     // Firefox and Linux browsers have no built-in AAC encoder: load the bundled one.
@@ -44,42 +52,44 @@ export async function exportMp4({ file, onProgress, signal }) {
     registerAacEncoder();
   }
 
-  const canvas = document.createElement('canvas');
-  canvas.width = OUT_W;
-  canvas.height = OUT_H;
-  const ctx = canvas.getContext('2d', { alpha: false });
-
-  const output = new mb.Output({
-    format: new mb.Mp4OutputFormat({ fastStart: 'in-memory' }),
-    target: new mb.BufferTarget(),
+  // one canvas, encoder and file per format
+  const jobs = formats.map((fmt) => {
+    const [width, height] = SIZES[fmt];
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const output = new mb.Output({
+      format: new mb.Mp4OutputFormat({ fastStart: 'in-memory' }),
+      target: new mb.BufferTarget(),
+    });
+    const videoSource = new mb.CanvasSource(canvas, { codec: 'avc', bitrate: VIDEO_BITRATE, keyFrameInterval: 2 });
+    output.addVideoTrack(videoSource, { frameRate: FPS });
+    let audioSource = null;
+    if (hasAudio) {
+      audioSource = new mb.AudioBufferSource({ codec: 'aac', bitrate: AUDIO_BITRATE });
+      output.addAudioTrack(audioSource);
+    }
+    return { fmt, ctx: canvas.getContext('2d', { alpha: false }), output, videoSource, audioSource };
   });
-  const videoSource = new mb.CanvasSource(canvas, {
-    codec: 'avc',
-    bitrate: VIDEO_BITRATE,
-    keyFrameInterval: 2,
-  });
-  output.addVideoTrack(videoSource, { frameRate: FPS });
-  let audioSource = null;
-  if (hasAudio) {
-    audioSource = new mb.AudioBufferSource({ codec: 'aac', bitrate: AUDIO_BITRATE });
-    output.addAudioTrack(audioSource);
-  }
 
+  const cancelAll = () => Promise.all(jobs.map((j) => (j.output.state !== 'canceled' ? j.output.cancel().catch(() => {}) : null)));
   const abort = async () => {
-    await output.cancel();
+    await cancelAll();
     throw new DOMException('Export cancelled', 'AbortError');
   };
 
   try {
-    await output.start();
+    for (const j of jobs) await j.output.start();
     const outDur = srcToOut(state.duration);
 
-    if (audioSource) {
+    if (hasAudio) {
       onProgress(0, 'Processing audio…');
       const audio = await buildAudio(mb, audioTrack, outDur, signal);
       if (signal.aborted) await abort();
-      await audioSource.add(audio);
-      audioSource.close();
+      for (const j of jobs) {
+        await j.audioSource.add(audio); // the same audio goes into every file
+        j.audioSource.close();
+      }
     }
 
     const frames = Math.max(1, Math.floor(outDur * FPS));
@@ -87,6 +97,7 @@ export async function exportMp4({ file, onProgress, signal }) {
     // `true`: a frame landing exactly on a cut shows the next piece, not the end of the one before
     const srcTimes = Array.from({ length: frames }, (_, i) => Math.min(lastSrc, outToSrc(i / FPS, true)));
     const sink = new mb.VideoSampleSink(videoTrack);
+    const what = formats.length > 1 ? 'both videos' : formats[0] === 'h' ? 'horizontal' : 'vertical';
 
     let i = 0;
     let prev = null;
@@ -96,22 +107,28 @@ export async function exportMp4({ file, onProgress, signal }) {
         await abort();
       }
       const drawCrop = sample ? (c, ...rect) => sample.draw(c, ...rect) : null;
-      drawComposite(ctx, drawCrop, srcTimes[i]);
-      await videoSource.add(i / FPS, 1 / FPS);
+      for (const j of jobs) {
+        drawComposite(j.ctx, drawCrop, srcTimes[i], j.fmt);
+        await j.videoSource.add(i / FPS, 1 / FPS);
+      }
       // the same frame can come back for consecutive timestamps; close it once
       if (prev && prev !== sample) prev.close();
       prev = sample;
       i++;
-      if (i % 5 === 0) onProgress(i / frames, `Encoding frame ${i} of ${frames}`);
+      if (i % 5 === 0) onProgress(i / frames, `Encoding ${what}: frame ${i} of ${frames}`);
     }
     prev?.close();
-    videoSource.close();
+    for (const j of jobs) j.videoSource.close();
 
     onProgress(1, 'Finishing…');
-    await output.finalize();
-    return new Blob([output.target.buffer], { type: 'video/mp4' });
+    const result = {};
+    for (const j of jobs) {
+      await j.output.finalize();
+      result[j.fmt] = new Blob([j.output.target.buffer], { type: 'video/mp4' });
+    }
+    return result;
   } catch (err) {
-    if (err.name !== 'AbortError' && output.state !== 'canceled') await output.cancel().catch(() => {});
+    if (err.name !== 'AbortError') await cancelAll();
     throw err;
   }
 }
