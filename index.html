@@ -120,8 +120,13 @@
       <button id="tipsBtn" class="btn" data-hint="Show the quick start steps again.">Tips</button>
       <span class="spacer"></span>
       <button id="zoomOut" class="btn" disabled aria-label="Zoom out" data-hint="Zoom the timeline out (Ctrl -)." data-hint-disabled="Load a clip first.">−</button>
-      <button id="zoomIn" class="btn" disabled aria-label="Zoom in" data-hint="Zoom the timeline in (Ctrl +). Ctrl + mouse wheel works too." data-hint-disabled="Load a clip first.">+</button>
+      <button id="zoomIn" class="btn" disabled aria-label="Zoom in" data-hint="Zoom the timeline in (Ctrl +). Ctrl + mouse wheel works too; plain wheel scrolls it." data-hint-disabled="Load a clip first.">+</button>
       <button id="zoomFit" class="btn" disabled data-hint="Fit the whole video in the timeline (Ctrl 0)." data-hint-disabled="Load a clip first.">Fit</button>
+    </div>
+    <div id="tlTopScroll" class="tl-topscroll">
+      <div class="tl-thumb" tabindex="0" role="scrollbar" aria-controls="timeline" aria-orientation="horizontal"
+        aria-label="Scroll the timeline" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"
+        data-hint="Drag to scroll the timeline, or click the bar to jump. Arrows and Page Up/Down work too. Mouse wheel scrolls, Shift + wheel scrolls the rows, Ctrl + wheel zooms."></div>
     </div>
     <div id="timeline" class="timeline"></div>
   </footer>
@@ -139,6 +144,8 @@
       <tr><td>Ctrl + Shift + Z, Ctrl + Y</td><td>Redo</td></tr>
       <tr><td>Ctrl + / Ctrl −</td><td>Zoom the timeline in or out (Ctrl + mouse wheel too)</td></tr>
       <tr><td>Ctrl + 0</td><td>Fit the whole video in the timeline</td></tr>
+      <tr><td>Mouse wheel (on the timeline)</td><td>Scroll left and right</td></tr>
+      <tr><td>Shift + mouse wheel</td><td>Scroll the rows up and down</td></tr>
       <tr><td>Esc</td><td>Close this window</td></tr>
       <tr><th colspan="2">Crop boxes (Tab to one)</th></tr>
       <tr><td>Arrows</td><td>Move</td></tr>

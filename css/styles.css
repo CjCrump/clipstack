@@ -212,7 +212,42 @@ body.dragging .source-wrap { outline: 3px dashed var(--accent); outline-offset: 
 /* timeline */
 .timeline-pane { border-top: 1px solid var(--line); background: var(--pane); }
 .transport { display: flex; align-items: center; gap: 12px; padding: 6px 12px; }
-.timeline { position: relative; padding-bottom: 8px; user-select: none; overflow-x: auto; overflow-y: hidden; }
+.timeline {
+  position: relative;
+  padding-bottom: 8px;
+  user-select: none;
+  /* sideways scrolling goes through the bar on top (and the wheel), rows scroll here */
+  overflow-x: hidden;
+  overflow-y: auto;
+  /* fixed height so the previews never shrink as rows are added; rows scroll inside */
+  height: clamp(140px, 24vh, 240px);
+}
+.tl-row.ruler { position: sticky; top: 0; z-index: 3; background: var(--pane); } /* time stays in view */
+.tl-row.ruler .tl-track { overflow: hidden; } /* the last time label can't widen the timeline */
+/* custom scroll bar above the timeline: always visible, unlike auto-hiding system bars */
+.tl-topscroll {
+  position: relative;
+  height: 14px;
+  margin: 0 12px 4px var(--label-w, 90px);
+  background: #33364a;
+  border-radius: 7px;
+  cursor: pointer;
+}
+.tl-thumb {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  left: 0;
+  width: 100%;
+  min-width: 30px;
+  background: #7c5cff;
+  border-radius: 5px;
+  cursor: grab;
+}
+.tl-thumb:hover { background: #9b84ff; }
+.tl-thumb:active { cursor: grabbing; }
+.tl-thumb:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
+.tl-topscroll.fits .tl-thumb { opacity: .3; cursor: default; } /* whole video already fits */
 .tl-content { position: relative; width: calc(var(--label-w) + var(--tl-w, 100%)); min-width: 100%; }
 
 .tl-row { display: grid; grid-template-columns: var(--label-w) var(--tl-w, 1fr); height: 28px; }
@@ -280,6 +315,7 @@ body.dragging .source-wrap { outline: 3px dashed var(--accent); outline-offset: 
   width: var(--tl-w, auto);
   right: 0;
   pointer-events: none;
+  z-index: 4; /* above the sticky ruler */
 }
 .tl-snap { position: absolute; top: 0; bottom: 0; width: 2px; background: #ffe14d; }
 .tl-snap[hidden] { display: none; }

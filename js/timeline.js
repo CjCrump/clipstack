@@ -7,7 +7,9 @@
 //
 // Mouse: drag a text/emoji bar to move it, drag its edges to trim; edges snap to
 // clip splits and the playhead. Click a clip piece to select it. Click or drag on
-// the ruler or an empty track to move the playhead. Ctrl + wheel zooms.
+// the ruler or an empty track to move the playhead. Mouse wheel scrolls left and
+// right (or through the rows if there's nothing to scroll sideways), Shift + wheel
+// scrolls the rows, Ctrl + wheel zooms. The bar on top scrolls sideways too.
 // Keyboard: see onRulerKey / onBarKey / onPieceKey. Ctrl + and - zoom (main.js).
 
 import {
@@ -20,22 +22,100 @@ const SNAP_PX = 8;
 const MAX_ZOOM = 60;
 const TICK_STEPS = [0.1, 0.2, 0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300];
 
-let root, video, playhead, snapLine, ruler, content;
+let root, video, playhead, snapLine, ruler, content, topBar;
 let lastAriaT = -1;
 let structureKey = '';
 let zoom = 1;
 const bars = new Map(); // "type:id" -> element
 
-export function initTimeline(el, v) {
+export function initTimeline(el, v, top) {
   root = el;
   video = v;
+  topBar = top;
   subscribe(render);
   new ResizeObserver(() => { structureKey = ''; render(); }).observe(root);
-  root.addEventListener('wheel', (e) => {
-    if (!(e.ctrlKey || e.metaKey) || !state.duration) return;
+  root.addEventListener('wheel', onWheel, { passive: false });
+  topBar.addEventListener('wheel', onWheel, { passive: false });
+  initTopBar();
+}
+
+// ---- scroll bar on top ----
+// The thumb is the visible part of the timeline: its width is the share of the
+// video in view, its position is how far along you've scrolled.
+const contentW = () => outDuration() * pxPerSec();
+const maxScroll = () => Math.max(0, contentW() - viewW());
+
+function initTopBar() {
+  const thumb = topBar.firstElementChild;
+  root.addEventListener('scroll', syncThumb);
+  new ResizeObserver(syncThumb).observe(topBar);
+
+  thumb.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const x0 = e.clientX;
+    const s0 = root.scrollLeft;
+    const trackFree = Math.max(1, topBar.clientWidth - thumb.offsetWidth);
+    thumb.setPointerCapture(e.pointerId);
+    const move = (ev) => { root.scrollLeft = s0 + ((ev.clientX - x0) / trackFree) * maxScroll(); };
+    const up = () => {
+      thumb.removeEventListener('pointermove', move);
+      thumb.removeEventListener('pointerup', up);
+    };
+    thumb.addEventListener('pointermove', move);
+    thumb.addEventListener('pointerup', up);
+  });
+  // click the bar beside the thumb: centre the view there
+  topBar.addEventListener('pointerdown', (e) => {
+    if (e.target === thumb) return;
+    const r = topBar.getBoundingClientRect();
+    root.scrollLeft = ((e.clientX - r.left) / r.width) * contentW() - viewW() / 2;
+  });
+  thumb.addEventListener('keydown', (e) => {
+    const page = viewW();
+    const by = { ArrowLeft: -page / 10, ArrowRight: page / 10, PageUp: -page, PageDown: page }[e.key];
+    if (by !== undefined) root.scrollLeft += by;
+    else if (e.key === 'Home') root.scrollLeft = 0;
+    else if (e.key === 'End') root.scrollLeft = maxScroll();
+    else return;
+    e.preventDefault();
+  });
+}
+
+function syncThumb() {
+  if (!topBar) return;
+  const thumb = topBar.firstElementChild;
+  const track = topBar.clientWidth;
+  const share = state.duration ? Math.min(1, viewW() / Math.max(1, contentW())) : 1;
+  const w = Math.max(30, track * share);
+  const along = maxScroll() ? Math.min(1, root.scrollLeft / maxScroll()) : 0;
+  thumb.style.width = `${w}px`;
+  thumb.style.left = `${(track - w) * along}px`;
+  topBar.classList.toggle('fits', share >= 1);
+  thumb.setAttribute('aria-valuenow', String(Math.round(along * 100)));
+}
+
+// Wheel: Ctrl zooms; otherwise sideways through time, or through the rows when
+// the whole video already fits (or with Shift).
+function onWheel(e) {
+  if (!state.duration) return;
+  if (e.ctrlKey || e.metaKey) {
     e.preventDefault(); // otherwise the browser zooms the page
     zoomBy(e.deltaY < 0 ? 1.25 : 0.8, e.clientX);
-  }, { passive: false });
+    return;
+  }
+  // Firefox reports wheel steps in lines, Chrome in pixels
+  const unit = e.deltaMode === 1 ? 32 : e.deltaMode === 2 ? viewW() : 1;
+  const along = (Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY) * unit;
+  const canSideways = outDuration() * pxPerSec() > viewW() + 1; // zoomed in past the view
+  if (e.shiftKey || !canSideways) {
+    if (root.scrollHeight <= root.clientHeight + 1) return; // nothing to scroll
+    e.preventDefault();
+    root.scrollTop += along;
+  } else {
+    e.preventDefault();
+    root.scrollLeft += along;
+  }
 }
 
 // ---- geometry ----
@@ -124,6 +204,7 @@ function build() {
   content.appendChild(layer);
 
   root.scrollLeft = scroll;
+  syncThumb();
   const refocus = focusedKey === 'ruler' ? ruler : bars.get(focusedKey);
   refocus?.focus();
   updatePlayhead(video.currentTime);

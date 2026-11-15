@@ -28,7 +28,7 @@ const DEFAULT_B = { x: 36, y: 730, w: 562 };
 initCropBoxes({ stage: $('stage'), overlay: $('overlay'), wrap: $('sourceWrap'), readout: $('splitReadout') });
 initPreview(canvas, video);
 initSourceLayer({ stage: $('stage'), canvas: $('srcLayer'), video, toggle: $('boxesToggle') });
-initTimeline($('timeline'), video);
+initTimeline($('timeline'), video, $('tlTopScroll'));
 initPanel($('panel'), { onChangeEmoji: changeEmoji });
 initHints();
 initHistory();
