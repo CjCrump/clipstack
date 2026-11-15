@@ -47,9 +47,62 @@ function makeBox(k, label) {
   el.className = `cropbox ${k.toLowerCase()}`;
   el.innerHTML = `<span class="tag">${label}</span>` +
     ['nw', 'ne', 'sw', 'se', 'n', 's', 'e', 'w'].map((h) => `<div class="handle" data-h="${h}"></div>`).join('');
+  el.tabIndex = 0;
+  el.setAttribute('role', 'group');
+  el.setAttribute('aria-label', `${label} crop box`);
+  el.setAttribute('aria-describedby', 'boxKeysHelp');
   el.addEventListener('pointerdown', (e) => startDrag(e, k));
+  el.addEventListener('keydown', (e) => onBoxKey(e, k));
   overlay.appendChild(el);
   return el;
+}
+
+// Keyboard: arrows move, Ctrl+arrows reshape (changes the split), +/- scale.
+// Shift makes every step bigger. Reuses the mouse code so behaviour matches.
+const ARROWS = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
+
+function onBoxKey(e, k) {
+  const other = k === 'A' ? 'B' : 'A';
+  const b = box(k);
+  const step = e.shiftKey ? 40 : 4; // source pixels
+  let handle;
+  let dx = 0;
+  let dy = 0;
+  let uniform = false;
+
+  if (ARROWS[e.key]) {
+    const [ax, ay] = ARROWS[e.key];
+    if (e.ctrlKey || e.metaKey) {
+      handle = ay ? 's' : 'e';
+      dx = ax * step * 2;
+      dy = ay * step * 2;
+    } else {
+      handle = 'move';
+      dx = ax * step;
+      dy = ay * step;
+    }
+  } else if (e.key === '+' || e.key === '=' || e.key === '-' || e.key === '_') {
+    handle = 'se';
+    uniform = true;
+    dx = (e.key === '-' || e.key === '_' ? -1 : 1) * b.w * 0.02;
+  } else {
+    return;
+  }
+
+  e.preventDefault();
+  const start = {
+    px: 0, py: 0, x: b.x, y: b.y, w: b.w, h: boxH(k),
+    otherCenterY: box(other).y + boxH(other) / 2,
+  };
+  if (handle === 'move') {
+    // no snapping here, or small steps near the centre line would never move
+    b.x += dx;
+    b.y += dy;
+  } else {
+    applyDrag(k, other, handle, start, dx, dy, uniform);
+  }
+  clampBoxes();
+  emit();
 }
 
 function startDrag(e, k) {

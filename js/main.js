@@ -108,7 +108,9 @@ video.addEventListener('play', () => { $('playBtn').textContent = 'Pause'; });
 video.addEventListener('pause', () => { $('playBtn').textContent = 'Play'; });
 
 document.addEventListener('keydown', (e) => {
-  if (e.target.closest('input, textarea, select') || !state.duration || state.exporting) return;
+  if (!modal.hidden) return; // the dialog handles its own keys
+  // fields type text; buttons and links use Space/Enter themselves
+  if (e.target.closest('input, textarea, select, button, a') || !state.duration || state.exporting) return;
   if (e.code === 'Space') {
     e.preventDefault();
     togglePlay();
@@ -118,14 +120,54 @@ document.addEventListener('keydown', (e) => {
 });
 
 // ---- modal ----
+// A real dialog for keyboard users: focus moves in, Tab stays inside, Esc closes,
+// and focus goes back to whatever opened it.
 const modal = $('modal');
+let returnFocus = null;
+const focusables = () => [...modal.querySelectorAll('button, a[href], input, [tabindex="0"]')]
+  .filter((el) => !el.hidden && !el.disabled && el.offsetParent !== null);
+
 function openModal(title, html, closable = true) {
+  if (modal.hidden) returnFocus = document.activeElement;
   $('modalTitle').textContent = title;
   $('modalBody').innerHTML = html;
   $('modalClose').hidden = !closable;
   modal.hidden = false;
+  (closable ? $('modalClose') : focusables()[0])?.focus();
 }
-$('modalClose').addEventListener('click', () => { modal.hidden = true; });
+
+function closeModal() {
+  modal.hidden = true;
+  returnFocus?.focus?.();
+  returnFocus = null;
+}
+$('modalClose').addEventListener('click', closeModal);
+
+modal.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !$('modalClose').hidden) {
+    e.preventDefault();
+    closeModal();
+  } else if (e.key === 'Tab') {
+    const els = focusables();
+    if (!els.length) return;
+    const first = els[0];
+    const last = els[els.length - 1];
+    if (e.shiftKey && document.activeElement === first) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && document.activeElement === last) {
+      e.preventDefault();
+      first.focus();
+    }
+  }
+});
+
+$('keysBtn').addEventListener('click', () => {
+  openModal('Keyboard shortcuts', '');
+  $('modalBody').appendChild($('keysTemplate').content.cloneNode(true));
+});
+
+$('loadBtn').addEventListener('click', () => $('fileInput').click());
 
 // ---- exports ----
 $('exportBrowser').addEventListener('click', async () => {
@@ -155,7 +197,7 @@ $('exportBrowser').addEventListener('click', async () => {
     openModal('Done', `<p>Your MP4 downloaded (${(blob.size / 1e6).toFixed(1)} MB, took ${secs}s).</p>`);
   } catch (err) {
     if (err.name === 'AbortError') {
-      modal.hidden = true;
+      closeModal();
     } else {
       console.error(err);
       openModal('Export failed', '<p id="exportError"></p>');

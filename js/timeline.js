@@ -1,12 +1,16 @@
 // Timeline: a ruler, one speed lane, and one lane per text layer.
 // Drag a bar to move it, drag its edges to stretch or shrink it.
 // Click or drag on the ruler / empty track to scrub.
+// Keyboard: the ruler is a playhead slider; bars are focusable (see onBarKey).
 
 import { state, emit, subscribe, clamp } from './state.js';
 
 const MIN_LEN = 0.1;
 
-let root, video, playhead;
+const FRAME = 1 / 30;
+
+let root, video, playhead, ruler;
+let lastAriaT = -1;
 let structureKey = '';
 const bars = new Map(); // "type:id" -> element
 
@@ -24,6 +28,11 @@ const pxPerSec = () => {
 
 export function updatePlayhead(t) {
   if (playhead) playhead.style.left = `${t * pxPerSec()}px`;
+  if (ruler && Math.abs(t - lastAriaT) > 0.05) {
+    lastAriaT = t;
+    ruler.setAttribute('aria-valuenow', t.toFixed(2));
+    ruler.setAttribute('aria-valuetext', `${t.toFixed(1)} seconds`);
+  }
 }
 
 function render() {
@@ -36,8 +45,11 @@ function render() {
 }
 
 function build() {
+  // rebuilding replaces the elements, so put keyboard focus back where it was
+  const focusedKey = root.contains(document.activeElement) ? document.activeElement.dataset.tlKey : null;
   root.innerHTML = '';
   bars.clear();
+  ruler = null;
   if (!state.duration) return;
 
   root.appendChild(rulerRow());
@@ -50,6 +62,9 @@ function build() {
   playhead.className = 'tl-playhead';
   layer.appendChild(playhead);
   root.appendChild(layer);
+
+  const refocus = focusedKey === 'ruler' ? ruler : bars.get(focusedKey);
+  refocus?.focus();
 }
 
 function row(labelText, cls = '') {
@@ -67,6 +82,15 @@ function row(labelText, cls = '') {
 
 function rulerRow() {
   const { r, track } = row('', 'ruler');
+  ruler = track;
+  track.tabIndex = 0;
+  track.dataset.tlKey = 'ruler';
+  track.setAttribute('role', 'slider');
+  track.setAttribute('aria-label', 'Playhead');
+  track.setAttribute('aria-valuemin', '0');
+  track.setAttribute('aria-valuemax', state.duration.toFixed(2));
+  track.addEventListener('keydown', onRulerKey);
+  lastAriaT = -1;
   const step = state.duration > 60 ? 5 : 1;
   for (let s = 0; s <= state.duration; s += step) {
     const tick = document.createElement('div');
@@ -84,9 +108,20 @@ function lane(labelText, items, type) {
     const bar = document.createElement('div');
     bar.className = `tl-bar ${type}`;
     bar.innerHTML = '<span class="tl-name"></span><div class="tl-edge l"></div><div class="tl-edge r"></div>';
+    const key = `${type}:${item.id}`;
+    bar.tabIndex = 0;
+    bar.dataset.tlKey = key;
+    bar.setAttribute('role', 'button');
     bar.addEventListener('pointerdown', (e) => dragBar(e, type, item, bar));
+    bar.addEventListener('focus', () => {
+      if (state.selected?.type !== type || state.selected.id !== item.id) {
+        state.selected = { type, id: item.id };
+        emit();
+      }
+    });
+    bar.addEventListener('keydown', (e) => onBarKey(e, type, item));
     track.appendChild(bar);
-    bars.set(`${type}:${item.id}`, bar);
+    bars.set(key, bar);
   }
   return r;
 }
@@ -101,7 +136,10 @@ function layoutBars() {
     if (!item) continue;
     bar.style.left = `${item.start * pps}px`;
     bar.style.width = `${(item.end - item.start) * pps}px`;
-    bar.querySelector('.tl-name').textContent = type === 'text' ? item.text : `${item.rate}x`;
+    const name = type === 'text' ? item.text : `${item.rate}x`;
+    bar.querySelector('.tl-name').textContent = name;
+    bar.setAttribute('aria-label',
+      `${type === 'text' ? 'Text' : 'Speed'} ${name}, ${item.start.toFixed(2)} to ${item.end.toFixed(2)} seconds`);
     bar.classList.toggle('selected', key === sel);
   }
 }
@@ -167,4 +205,50 @@ function dragBar(e, type, item, bar) {
   };
   bar.addEventListener('pointermove', move);
   bar.addEventListener('pointerup', up);
+}
+
+// ---- keyboard ----
+
+function seekTo(t) {
+  video.currentTime = clamp(t, 0, state.duration);
+}
+
+// Playhead slider: arrows step 0.1s (Shift 1s), , and . step one frame, Home/End.
+function onRulerKey(e) {
+  const t = video.currentTime;
+  const big = e.shiftKey ? 1 : 0.1;
+  const keys = {
+    ArrowLeft: t - big, ArrowDown: t - big, ArrowRight: t + big, ArrowUp: t + big,
+    ',': t - FRAME, '.': t + FRAME, Home: 0, End: state.duration,
+  };
+  if (!(e.key in keys)) return;
+  e.preventDefault();
+  seekTo(keys[e.key]);
+}
+
+// Bars: arrows move (Shift = 1s steps), Ctrl+arrows stretch or shrink the end,
+// [ and ] set the start or end to the playhead, Enter jumps the playhead to the start.
+function onBarKey(e, type, item) {
+  const { lo, hi } = type === 'speed' ? speedBounds(item) : { lo: 0, hi: state.duration };
+  const step = e.shiftKey ? 1 : 0.1;
+  const dir = e.key === 'ArrowLeft' ? -1 : e.key === 'ArrowRight' ? 1 : 0;
+  const t = video.currentTime;
+
+  if (dir && (e.ctrlKey || e.metaKey)) {
+    item.end = clamp(item.end + dir * step, item.start + MIN_LEN, hi);
+  } else if (dir) {
+    const len = item.end - item.start;
+    item.start = clamp(item.start + dir * step, lo, hi - len);
+    item.end = item.start + len;
+  } else if (e.key === '[') {
+    item.start = clamp(t, lo, item.end - MIN_LEN);
+  } else if (e.key === ']') {
+    item.end = clamp(t, item.start + MIN_LEN, hi);
+  } else if (e.key === 'Enter') {
+    seekTo(item.start);
+  } else {
+    return;
+  }
+  e.preventDefault();
+  emit();
 }

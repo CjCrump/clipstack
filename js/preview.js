@@ -13,6 +13,27 @@ export function initPreview(c, v) {
   video = v;
   ctx = canvas.getContext('2d');
   canvas.addEventListener('pointerdown', onPointerDown);
+  canvas.addEventListener('keydown', onKey);
+}
+
+// Keyboard: with a text selected, arrows move it and +/- resize it (Shift = bigger steps).
+function onKey(e) {
+  const tx = state.selected?.type === 'text' && state.texts.find((i) => i.id === state.selected.id);
+  if (!tx) return;
+  const step = e.shiftKey ? 50 : 10;
+  const moves = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] };
+  if (moves[e.key]) {
+    tx.x = clamp(tx.x + moves[e.key][0], 0, OUT_W);
+    tx.y = clamp(tx.y + moves[e.key][1], 0, OUT_H);
+  } else if (e.key === '+' || e.key === '=') {
+    tx.size = clamp(tx.size + 8, 30, 400);
+  } else if (e.key === '-' || e.key === '_') {
+    tx.size = clamp(tx.size - 8, 30, 400);
+  } else {
+    return;
+  }
+  e.preventDefault();
+  emit();
 }
 
 const drawFromVideo = (c, ...args) => c.drawImage(video, ...args);

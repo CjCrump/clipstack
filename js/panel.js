@@ -27,12 +27,16 @@ function render() {
 
 function build(item) {
   if (!item) {
-    root.innerHTML = '<p class="muted">Select a text or speed bar to edit it. Drag text in the preview to move it, and use its corner handle to resize.</p>';
+    root.innerHTML = '<p class="muted">Select a text or speed bar (click it, or Tab to it on the timeline) to edit it. Drag text in the preview to move it, and use its corner handle to resize.</p>';
     return;
   }
   if (state.selected.type === 'text') {
     root.innerHTML = `
       <label>Text <textarea data-k="text" rows="2" maxlength="${MAX_TEXT}"></textarea></label>
+      <div class="row">
+        <label>X <input data-k="x" type="number" min="0" max="1080" step="10"></label>
+        <label>Y <input data-k="y" type="number" min="0" max="1920" step="10"></label>
+      </div>
       <label>Size <input data-k="size" type="number" min="30" max="400" step="2"></label>
       <div class="row">
         <label>Start (s) <input data-k="start" type="number" step="0.05" min="0"></label>
@@ -63,6 +67,8 @@ function build(item) {
       it[k] = k === 'text' ? v.slice(0, MAX_TEXT) : v;
       if (k === 'start' || k === 'end') it[k] = Math.min(state.duration, Math.max(0, it[k]));
       if (k === 'size') it.size = Math.min(400, Math.max(30, it.size));
+      if (k === 'x') it.x = Math.min(1080, Math.max(0, it.x));
+      if (k === 'y') it.y = Math.min(1920, Math.max(0, it.y));
       if (it.end <= it.start) it.end = it.start + 0.1;
       emit();
     });
@@ -75,9 +81,9 @@ function sync(item) {
   root.querySelectorAll('[data-k]').forEach((input) => {
     if (input === document.activeElement) return;
     const v = item[input.dataset.k];
-    input.value = typeof v === 'number' && input.dataset.k !== 'rate' && input.dataset.k !== 'size'
-      ? v.toFixed(2)
-      : v;
+    const k = input.dataset.k;
+    if (k === 'x' || k === 'y') input.value = Math.round(v);
+    else input.value = typeof v === 'number' && k !== 'rate' && k !== 'size' ? v.toFixed(2) : v;
   });
 }
 

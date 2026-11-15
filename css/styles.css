@@ -293,3 +293,35 @@ body.dragging .source-wrap { outline: 3px dashed var(--accent); outline-offset: 
 .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
 .progress { height: 8px; background: #0f1014; border-radius: 4px; overflow: hidden; }
 .progress > div { height: 100%; width: 0; background: var(--accent); }
+
+/* keyboard focus: always visible when using the keyboard */
+.btn:focus-visible,
+.toolbar-link:focus-visible,
+.cropbox:focus-visible,
+.tl-bar:focus-visible,
+.tl-track:focus-visible,
+#preview:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible,
+.doc-main a:focus-visible {
+  outline: 3px solid #fff;
+  outline-offset: 2px;
+}
+
+/* text only screen readers hear */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* keyboard shortcuts table */
+.keys { width: 100%; border-collapse: collapse; font-size: 13px; }
+.keys th { text-align: left; padding: 10px 0 4px; color: var(--muted); font-weight: 600; }
+.keys td { padding: 3px 0; border-bottom: 1px solid var(--line); }
+.keys td:first-child { width: 40%; font-family: ui-monospace, monospace; }
+.modal-card { max-height: 90vh; overflow: auto; }

@@ -11,7 +11,8 @@
 <body>
   <header class="toolbar">
     <strong class="brand">Clipstack</strong>
-    <label class="btn">Load clip<input type="file" id="fileInput" accept="video/*" hidden></label>
+    <button id="loadBtn" class="btn">Load clip</button>
+    <input type="file" id="fileInput" accept="video/*" hidden>
     <button id="addText" class="btn" disabled>+ Text</button>
     <button id="addSpeed" class="btn" disabled>+ Speed</button>
     <span class="spacer"></span>
@@ -35,7 +36,8 @@
 
     <section class="pane preview-pane">
       <div class="pane-title">Preview <span class="muted">1080×1920</span></div>
-      <div class="preview-wrap"><canvas id="preview" width="1080" height="1920"></canvas></div>
+      <div class="preview-wrap"><canvas id="preview" width="1080" height="1920" tabindex="0"
+        aria-label="9 by 16 preview" aria-describedby="previewKeysHelp"></canvas></div>
     </section>
 
     <aside class="pane panel-pane">
@@ -48,12 +50,40 @@
     <div class="transport">
       <button id="playBtn" class="btn" disabled>Play</button>
       <span id="timeLabel" class="mono">0.00 / 0.00</span>
-      <span class="muted">Space play/pause · Delete removes selected</span>
+      <button id="keysBtn" class="btn">Keyboard shortcuts</button>
     </div>
     <div id="timeline" class="timeline"></div>
   </footer>
 
-  <div id="modal" class="modal" hidden>
+  <p id="boxKeysHelp" class="sr-only">Arrow keys move the box. Ctrl plus arrow keys reshape it, which changes the split. Plus and minus scale it. Hold Shift for bigger steps.</p>
+  <p id="previewKeysHelp" class="sr-only">With a text selected, arrow keys move it and plus and minus resize it. Hold Shift for bigger steps.</p>
+
+  <template id="keysTemplate">
+    <table class="keys">
+      <tr><th colspan="2">Anywhere</th></tr>
+      <tr><td>Space</td><td>Play or pause (when not on a button or field)</td></tr>
+      <tr><td>Delete</td><td>Remove the selected text or speed section</td></tr>
+      <tr><td>Esc</td><td>Close this window</td></tr>
+      <tr><th colspan="2">Crop boxes (Tab to one)</th></tr>
+      <tr><td>Arrows</td><td>Move</td></tr>
+      <tr><td>Ctrl + Arrows</td><td>Reshape (changes the split; the other box follows)</td></tr>
+      <tr><td>+ / −</td><td>Scale without changing the split</td></tr>
+      <tr><th colspan="2">Preview (Tab to it, with a text selected)</th></tr>
+      <tr><td>Arrows</td><td>Move the text</td></tr>
+      <tr><td>+ / −</td><td>Resize the text</td></tr>
+      <tr><th colspan="2">Timeline</th></tr>
+      <tr><td>Arrows (on the ruler)</td><td>Move the playhead 0.1s</td></tr>
+      <tr><td>, / .</td><td>Step one frame</td></tr>
+      <tr><td>Home / End</td><td>Jump to start or end</td></tr>
+      <tr><td>Arrows (on a bar)</td><td>Move the text or speed section 0.1s</td></tr>
+      <tr><td>Ctrl + Arrows</td><td>Shorten or lengthen it</td></tr>
+      <tr><td>[ / ]</td><td>Set its start or end to the playhead</td></tr>
+      <tr><td>Enter</td><td>Jump the playhead to its start</td></tr>
+      <tr><td colspan="2" class="muted">Hold Shift with any arrow for bigger steps.</td></tr>
+    </table>
+  </template>
+
+  <div id="modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle" hidden>
     <div class="modal-card">
       <h3 id="modalTitle"></h3>
       <div id="modalBody"></div>
