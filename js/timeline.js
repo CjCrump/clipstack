@@ -22,7 +22,7 @@ const SNAP_PX = 8;
 const MAX_ZOOM = 60;
 const TICK_STEPS = [0.1, 0.2, 0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300];
 
-let root, video, playhead, snapLine, ruler, content, topBar;
+let root, video, playhead, head, snapLine, ruler, content, topBar;
 let lastAriaT = -1;
 let structureKey = '';
 let zoom = 1;
@@ -39,39 +39,56 @@ export function initTimeline(el, v, top) {
   initTopBar();
 }
 
-// ---- scroll bar on top ----
-// The thumb is the visible part of the timeline: its width is the share of the
-// video in view, its position is how far along you've scrolled.
+// ---- scrub bar on top ----
+// The whole video, end to end. The red knob is the playhead: click or drag
+// anywhere on the bar to move it. When zoomed in, the lighter box shows the part
+// of the video in view; drag it to scroll. With the whole video in view, the bar
+// lines up with the timeline, so the knob sits right above the red line.
 const contentW = () => outDuration() * pxPerSec();
 const maxScroll = () => Math.max(0, contentW() - viewW());
 
 function initTopBar() {
-  const thumb = topBar.firstElementChild;
-  root.addEventListener('scroll', syncThumb);
-  new ResizeObserver(syncThumb).observe(topBar);
+  const win = topBar.querySelector('.tl-window');
+  root.addEventListener('scroll', syncOverview);
+  new ResizeObserver(syncOverview).observe(topBar);
 
-  thumb.addEventListener('pointerdown', (e) => {
+  // drag the view box: scroll
+  win.addEventListener('pointerdown', (e) => {
+    if (!state.duration) return;
     e.preventDefault();
     e.stopPropagation();
     const x0 = e.clientX;
     const s0 = root.scrollLeft;
-    const trackFree = Math.max(1, topBar.clientWidth - thumb.offsetWidth);
-    thumb.setPointerCapture(e.pointerId);
-    const move = (ev) => { root.scrollLeft = s0 + ((ev.clientX - x0) / trackFree) * maxScroll(); };
+    win.setPointerCapture(e.pointerId);
+    const move = (ev) => { root.scrollLeft = s0 + ((ev.clientX - x0) / topBar.clientWidth) * contentW(); };
     const up = () => {
-      thumb.removeEventListener('pointermove', move);
-      thumb.removeEventListener('pointerup', up);
+      win.removeEventListener('pointermove', move);
+      win.removeEventListener('pointerup', up);
     };
-    thumb.addEventListener('pointermove', move);
-    thumb.addEventListener('pointerup', up);
+    win.addEventListener('pointermove', move);
+    win.addEventListener('pointerup', up);
   });
-  // click the bar beside the thumb: centre the view there
+
+  // anywhere else on the bar (knob included): move the playhead there
   topBar.addEventListener('pointerdown', (e) => {
-    if (e.target === thumb) return;
-    const r = topBar.getBoundingClientRect();
-    root.scrollLeft = ((e.clientX - r.left) / r.width) * contentW() - viewW() / 2;
+    if (!state.duration || e.target === win) return;
+    e.preventDefault();
+    const seek = (ev) => {
+      const r = topBar.getBoundingClientRect();
+      seekOut(clamp((ev.clientX - r.left) / r.width, 0, 1) * outDuration());
+      keepPlayheadInView();
+    };
+    seek(e);
+    topBar.setPointerCapture(e.pointerId);
+    const up = () => {
+      topBar.removeEventListener('pointermove', seek);
+      topBar.removeEventListener('pointerup', up);
+    };
+    topBar.addEventListener('pointermove', seek);
+    topBar.addEventListener('pointerup', up);
   });
-  thumb.addEventListener('keydown', (e) => {
+
+  win.addEventListener('keydown', (e) => {
     const page = viewW();
     const by = { ArrowLeft: -page / 10, ArrowRight: page / 10, PageUp: -page, PageDown: page }[e.key];
     if (by !== undefined) root.scrollLeft += by;
@@ -82,17 +99,30 @@ function initTopBar() {
   });
 }
 
-function syncThumb() {
+function syncOverview() {
   if (!topBar) return;
-  const thumb = topBar.firstElementChild;
+  const win = topBar.querySelector('.tl-window');
+  const knob = topBar.querySelector('.tl-knob');
+  topBar.hidden = !state.duration;
+  if (!state.duration) return;
+  // match the timeline's width exactly (its row scrollbar, if any, takes space on the right)
+  topBar.style.marginRight = `${root.offsetWidth - root.clientWidth}px`;
   const track = topBar.clientWidth;
-  const share = state.duration ? Math.min(1, viewW() / Math.max(1, contentW())) : 1;
-  const w = Math.max(30, track * share);
-  const along = maxScroll() ? Math.min(1, root.scrollLeft / maxScroll()) : 0;
-  thumb.style.width = `${w}px`;
-  thumb.style.left = `${(track - w) * along}px`;
-  topBar.classList.toggle('fits', share >= 1);
-  thumb.setAttribute('aria-valuenow', String(Math.round(along * 100)));
+  const total = Math.max(0.001, contentW());
+  const share = Math.min(1, viewW() / total);
+  win.hidden = share >= 1; // nothing to scroll: no box
+  win.style.width = `${Math.max(16, track * share)}px`;
+  win.style.left = `${(root.scrollLeft / total) * track}px`;
+  win.setAttribute('aria-valuenow', String(maxScroll() ? Math.round((root.scrollLeft / maxScroll()) * 100) : 0));
+  knob.style.left = `${(outNow() / Math.max(0.001, outDuration())) * track}px`;
+}
+
+// If the playhead has gone off screen, scroll so it's back in view.
+function keepPlayheadInView() {
+  const x = outNow() * pxPerSec();
+  const pad = 30;
+  if (x < root.scrollLeft + pad) root.scrollLeft = Math.max(0, x - pad);
+  else if (x > root.scrollLeft + viewW() - pad) root.scrollLeft = Math.min(maxScroll(), x - viewW() + pad);
 }
 
 // Wheel: Ctrl zooms; otherwise sideways through time, or through the rows when
@@ -148,6 +178,8 @@ export function updatePlayhead(t) {
   if (!playhead) return;
   const x = srcToOut(t) * pxPerSec();
   playhead.style.left = `${x}px`;
+  if (head) head.style.left = `${x}px`;
+  syncOverview();
   // while playing zoomed in, page the view along with the playhead
   if (!video.paused && zoom > 1 && (x < root.scrollLeft || x > root.scrollLeft + viewW() - 20)) {
     root.scrollLeft = Math.max(0, x - 40);
@@ -204,7 +236,7 @@ function build() {
   content.appendChild(layer);
 
   root.scrollLeft = scroll;
-  syncThumb();
+  syncOverview();
   const refocus = focusedKey === 'ruler' ? ruler : bars.get(focusedKey);
   refocus?.focus();
   updatePlayhead(video.currentTime);
@@ -235,6 +267,11 @@ function rulerRow() {
   track.setAttribute('aria-valuemin', '0');
   track.setAttribute('aria-valuemax', outDuration().toFixed(2));
   track.addEventListener('keydown', onRulerKey);
+  // the playhead's handle: lives in the ruler, which stays on top while rows scroll
+  head = document.createElement('div');
+  head.className = 'tl-head';
+  head.dataset.hint = 'The playhead. Drag it to scrub; the timeline follows when you drag past the edge.';
+  track.appendChild(head);
   lastAriaT = -1;
   const pps = pxPerSec();
   const step = TICK_STEPS.find((s) => s * pps >= 70) || 600;
@@ -339,6 +376,7 @@ function scrub(e, trackEl) {
   const seek = (ev) => {
     const r = track.getBoundingClientRect();
     seekOut((ev.clientX - r.left) / pxPerSec());
+    keepPlayheadInView(); // dragging past the edge scrolls the timeline along
   };
   seek(e);
   track.setPointerCapture(e.pointerId);

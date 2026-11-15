@@ -123,10 +123,12 @@
       <button id="zoomIn" class="btn" disabled aria-label="Zoom in" data-hint="Zoom the timeline in (Ctrl +). Ctrl + mouse wheel works too; plain wheel scrolls it." data-hint-disabled="Load a clip first.">+</button>
       <button id="zoomFit" class="btn" disabled data-hint="Fit the whole video in the timeline (Ctrl 0)." data-hint-disabled="Load a clip first.">Fit</button>
     </div>
-    <div id="tlTopScroll" class="tl-topscroll">
-      <div class="tl-thumb" tabindex="0" role="scrollbar" aria-controls="timeline" aria-orientation="horizontal"
-        aria-label="Scroll the timeline" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"
-        data-hint="Drag to scroll the timeline, or click the bar to jump. Arrows and Page Up/Down work too. Mouse wheel scrolls, Shift + wheel scrolls the rows, Ctrl + wheel zooms."></div>
+    <div id="tlTopScroll" class="tl-topscroll" hidden
+      data-hint="The whole video. Click or drag to move the playhead (red). Mouse wheel scrolls the timeline, Shift + wheel the rows, Ctrl + wheel zooms.">
+      <div class="tl-window" tabindex="0" role="scrollbar" aria-controls="timeline" aria-orientation="horizontal"
+        aria-label="Part of the video in view" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" hidden
+        data-hint="The part of the video in view. Drag it to scroll. Arrows, Page Up/Down, Home and End work too."></div>
+      <div class="tl-knob" aria-hidden="true"></div>
     </div>
     <div id="timeline" class="timeline"></div>
   </footer>

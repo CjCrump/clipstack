@@ -224,30 +224,52 @@ body.dragging .source-wrap { outline: 3px dashed var(--accent); outline-offset: 
 }
 .tl-row.ruler { position: sticky; top: 0; z-index: 3; background: var(--pane); } /* time stays in view */
 .tl-row.ruler .tl-track { overflow: hidden; } /* the last time label can't widen the timeline */
-/* custom scroll bar above the timeline: always visible, unlike auto-hiding system bars */
+/* scrub bar above the timeline: the whole video, with the playhead's red knob */
 .tl-topscroll {
   position: relative;
-  height: 14px;
-  margin: 0 12px 4px var(--label-w, 90px);
+  height: 16px;
+  margin: 2px 0 4px var(--label-w, 90px);
   background: #33364a;
-  border-radius: 7px;
+  border-radius: 8px;
   cursor: pointer;
+  touch-action: none;
 }
-.tl-thumb {
+.tl-topscroll[hidden] { display: none; }
+.tl-window { /* the part in view when zoomed in */
   position: absolute;
-  top: 2px;
-  bottom: 2px;
-  left: 0;
-  width: 100%;
-  min-width: 30px;
-  background: #7c5cff;
-  border-radius: 5px;
+  top: 0;
+  bottom: 0;
+  background: rgba(155, 132, 255, .35);
+  border: 1px solid #9b84ff;
+  border-radius: 8px;
   cursor: grab;
 }
-.tl-thumb:hover { background: #9b84ff; }
-.tl-thumb:active { cursor: grabbing; }
-.tl-thumb:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
-.tl-topscroll.fits .tl-thumb { opacity: .3; cursor: default; } /* whole video already fits */
+.tl-window[hidden] { display: none; }
+.tl-window:active { cursor: grabbing; }
+.tl-window:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
+.tl-knob {
+  position: absolute;
+  top: -3px;
+  width: 16px;
+  height: 22px;
+  margin-left: -8px;
+  background: #ff4d4d;
+  border: 2px solid #fff;
+  border-radius: 8px;
+  pointer-events: none; /* the bar handles the drag */
+}
+/* the playhead's handle at the top of the red line, in the ruler */
+.tl-head {
+  position: absolute;
+  top: 2px;
+  width: 14px;
+  height: 18px;
+  margin-left: -6px; /* centred on the 2px line */
+  background: #ff4d4d;
+  border-radius: 4px 4px 7px 7px;
+  cursor: ew-resize;
+  z-index: 5;
+}
 .tl-content { position: relative; width: calc(var(--label-w) + var(--tl-w, 100%)); min-width: 100%; }
 
 .tl-row { display: grid; grid-template-columns: var(--label-w) var(--tl-w, 1fr); height: 28px; }
