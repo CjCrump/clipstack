@@ -6,7 +6,7 @@ import { copySelection, duplicateSelection, groupSelection, ungroupSelection, de
 import { MAX_TEXT } from './exportFfmpeg.js';
 import { emojiUrl } from './emoji.js';
 
-const RATES = [1, 1.5, 2, 3, 4, 8];
+const RATES = [0.25, 0.5, 0.75, 1, 1.5, 2, 3, 4, 8];
 
 const SIZE_TEXT = `Letter height in pixels on the horizontal video, ${MIN_SIZE} to ${MAX_SIZE}. Vertical scales it with the crop zoom so it covers the same spot.`;
 const SIZE_EMOJI = `Width and height in pixels on the horizontal video, ${MIN_SIZE} to ${MAX_SIZE}. Vertical scales it with the crop zoom so it covers the same spot.`;
@@ -77,7 +77,7 @@ ${placeFields(SIZE_TEXT)}
     const only = list.length === 1;
     root.innerHTML = `
       <p class="piece-info"></p>
-      <label data-hint="How much faster this piece plays. Voices keep their pitch.">Speed <select data-k="rate">${RATES.map((r) => `<option value="${r}">${r}x</option>`).join('')}</select></label>
+      <label data-hint="How fast this piece plays: below 1x is slow motion, above 1x speeds it up. Voices keep their pitch.">Speed <select data-k="rate">${RATES.map((r) => `<option value="${r}">${r}x</option>`).join('')}</select></label>
       <button class="btn danger" data-act="delete" ${only ? 'disabled' : ''}
         data-hint="Cut this piece out of the video. Everything after it slides left. The Delete key does the same. Ctrl+Z brings it back."
         data-hint-disabled="Split the clip first: there has to be something left.">Delete piece</button>`;

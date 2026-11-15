@@ -25,13 +25,17 @@ export function safeFileName(name) {
   return String(name).replace(/[^A-Za-z0-9 ._()-]/g, '_').replace(/^[ .-]+/, '') || 'clip.mp4';
 }
 
-// atempo only takes 0.5..2 per instance, so chain it for bigger speedups.
+// atempo only takes 0.5..2 per instance, so chain it for big speedups and slow-downs.
 function atempo(rate) {
   const parts = [];
   let r = rate;
   while (r > 2) {
     parts.push('atempo=2');
     r /= 2;
+  }
+  while (r < 0.5) {
+    parts.push('atempo=0.5');
+    r /= 0.5;
   }
   if (r !== 1) parts.push(`atempo=${f(r)}`);
   return parts.length ? `,${parts.join(',')}` : '';
@@ -78,7 +82,7 @@ export function buildFilter(fontPath, fmt = 'v') {
   const lines = [];
 
   segs.forEach((seg, i) => {
-    const s = { ...seg, rate: num(seg.rate, 1, 16, 1) };
+    const s = { ...seg, rate: num(seg.rate, 0.25, 16, 1) };
     // the piece that runs to the end of the file is left open-ended so no frame is lost
     const toEnd = s.end >= state.duration - 0.01;
     const range = toEnd ? `start=${f(s.start)}` : `start=${f(s.start)}:end=${f(s.end)}`;
