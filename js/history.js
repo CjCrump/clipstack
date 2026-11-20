@@ -17,6 +17,7 @@ const listeners = new Set();
 // Only the edit itself: not the selection, playhead or anything about the file.
 const snap = () => JSON.stringify({
   split: state.split, boxA: state.boxA, boxB: state.boxB, texts: state.texts, clips: state.clips,
+  facecam: state.facecam, boxASaved: state.boxASaved,
 });
 
 function commit() {

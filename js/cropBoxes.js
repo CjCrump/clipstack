@@ -2,12 +2,18 @@
 // Any handle reshapes a box freely; its new shape sets the split and the other
 // box re-shapes to fill the rest of the 9:16 frame. Shift + corner scales
 // without changing the split. Moving a box snaps its centre to the video's centre.
+// No facecam mode hides Bottom and turns Top into one 9:16 crop for the whole frame.
 
-import { state, emit, subscribe, OUT_W, OUT_H, box, boxH, clampBoxes, clamp } from './state.js';
+import { state, emit, subscribe, OUT_W, OUT_H, box, boxH, clampBoxes, clamp, setFacecam } from './state.js';
 
 const SNAP_PX = 8; // snap distance in screen pixels
 
+const HINT_A = 'Top of the video, usually gameplay. Drag it, or drag a handle to resize. The other box follows so the frame stays full. No facecam? Switch to No facecam, or drag Bottom right under Top.';
+const HINT_B = 'Bottom of the video, usually your facecam. Drag it, or drag a handle to resize. The other box follows so the frame stays full. No facecam? Switch to No facecam, or drag Bottom right under Top.';
+const HINT_SINGLE = 'The whole vertical video comes from this one crop. Drag it, or drag a handle to resize; it stays 9:16.';
+
 let stage, overlay, wrap, readout;
+let camBtns = [];
 let scale = 1; // display px per source px
 const els = {};
 const guides = { x: false, y: false };
@@ -17,6 +23,8 @@ export function initCropBoxes(opts) {
   ({ stage, overlay, wrap, readout } = opts);
   els.A = makeBox('A', 'Top');
   els.B = makeBox('B', 'Bottom');
+  camBtns = [...opts.camSwitch.querySelectorAll('[data-cam]')];
+  camBtns.forEach((btn) => btn.addEventListener('click', () => setFacecam(btn.dataset.cam === 'on')));
   for (const axis of ['x', 'y']) {
     guideEls[axis] = document.createElement('div');
     guideEls[axis].className = `guide guide-${axis}`;
@@ -52,9 +60,7 @@ function makeBox(k, label) {
   el.setAttribute('aria-label', `${label} crop box`);
   el.setAttribute('aria-describedby', 'boxKeysHelp');
   el.dataset.hintFocus = 'only'; // a hover tip would sit in the way while dragging
-  el.dataset.hint = k === 'A'
-    ? 'Top of the video, usually gameplay. Drag it, or drag a handle to resize. The other box follows so the frame stays full. No facecam? Put the Bottom box right under the Top box for one tall crop.'
-    : 'Bottom of the video, usually your facecam. Drag it, or drag a handle to resize. The other box follows so the frame stays full. No facecam? Put the Bottom box right under the Top box for one tall crop.';
+  el.dataset.hint = k === 'A' ? HINT_A : HINT_B;
   el.addEventListener('pointerdown', (e) => startDrag(e, k));
   el.addEventListener('keydown', (e) => onBoxKey(e, k));
   overlay.appendChild(el);
@@ -154,6 +160,27 @@ function applyDrag(k, other, handle, s, dx, dy, shift) {
     return;
   }
 
+  // No facecam: one crop locked to 9:16. Edge handles grow it from the middle
+  // of that edge, corners from the opposite corner.
+  if (!state.facecam) {
+    const r = OUT_H / OUT_W;
+    let w = s.w;
+    if (handle.includes('e')) w = s.w + dx;
+    else if (handle.includes('w')) w = s.w - dx;
+    else if (handle === 's') w = (s.h + dy) / r;
+    else if (handle === 'n') w = (s.h - dy) / r;
+    w = Math.max(80, w);
+    const h = w * r;
+    b.w = w;
+    if (handle.includes('w')) b.x = s.x + s.w - w;
+    else if (handle === 'n' || handle === 's') b.x = s.x + (s.w - w) / 2;
+    else b.x = s.x;
+    if (handle.includes('n')) b.y = s.y + s.h - h;
+    else if (handle === 'e' || handle === 'w') b.y = s.y + (s.h - h) / 2;
+    else b.y = s.y;
+    return;
+  }
+
   // Shift + corner: uniform scale, split stays the same
   if (shift && handle.length === 2) {
     const w = Math.max(80, handle.includes('e') ? s.w + dx : s.w - dx);
@@ -205,6 +232,12 @@ function snapToCenter(k) {
 }
 
 function render() {
+  const single = !state.facecam;
+  els.B.hidden = single;
+  els.A.querySelector('.tag').textContent = single ? 'Crop' : 'Top';
+  els.A.setAttribute('aria-label', single ? 'Crop box' : 'Top crop box');
+  els.A.dataset.hint = single ? HINT_SINGLE : HINT_A;
+  camBtns.forEach((btn) => btn.setAttribute('aria-pressed', String((btn.dataset.cam === 'on') === state.facecam)));
   for (const k of ['A', 'B']) {
     const b = box(k);
     const s = els[k].style;
@@ -215,7 +248,7 @@ function render() {
   }
   renderGuides();
   const top = Math.round(state.split * 100);
-  readout.textContent = `top ${top}% / bottom ${100 - top}%`;
+  readout.textContent = single ? 'off (one crop)' : `top ${top}% / bottom ${100 - top}%`;
 }
 
 function renderGuides() {

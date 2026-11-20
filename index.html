@@ -67,7 +67,7 @@
   <section id="tips" class="tips" aria-label="Quick start" hidden>
     <ol>
       <li><b>Load</b> a 16:9 clip.</li>
-      <li>Put the <b>Top</b> box on your gameplay, <b>Bottom</b> on your facecam. No facecam? Stack Bottom right under Top.</li>
+      <li>Put the <b>Top</b> box on your gameplay, <b>Bottom</b> on your facecam. No facecam? Pick <b>No facecam</b>, or drag Bottom right under Top.</li>
       <li><b>Split</b> with S, then speed up or delete pieces. Add <b>text</b> or <b>emoji</b> at the playhead.</li>
       <li><b>Export</b> vertical, horizontal or both.</li>
     </ol>
@@ -81,6 +81,14 @@
     <section class="pane source-pane">
       <div class="pane-title">Horizontal <span class="muted">1920×1080</span>
         <span class="muted">· vertical split</span> <span id="splitReadout" class="muted"></span>
+        <div id="camSwitch" class="seg" role="group" aria-label="Vertical layout">
+          <button class="btn small" type="button" data-cam="on" aria-pressed="true" disabled
+            data-hint="Two crops stacked: gameplay on top, facecam on the bottom."
+            data-hint-disabled="Load a clip first.">Facecam</button>
+          <button class="btn small" type="button" data-cam="off" aria-pressed="false" disabled
+            data-hint="One 9:16 crop fills the whole vertical video. Dragging Bottom right under Top switches here too."
+            data-hint-disabled="Load a clip first.">No facecam</button>
+        </div>
         <button id="boxesToggle" class="btn small" type="button" aria-pressed="false" disabled
           data-hint="Hide the Top and Bottom crop boxes to see and place text and emoji on the clean horizontal frame. The boxes only shape the vertical video."
           data-hint-disabled="Load a clip first.">Hide boxes</button></div>

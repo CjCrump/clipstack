@@ -106,6 +106,9 @@ export function buildFilter(fontPath, fmt = 'v') {
     // the whole clip in a 1920x1080 frame, black bars if the clip isn't 16:9
     lines.push(`[cv]fps=30,scale=${HOR_W}:${HOR_H}:force_original_aspect_ratio=decrease,` +
       `pad=${HOR_W}:${HOR_H}:(ow-iw)/2:(oh-ih)/2,setsar=1${tail}[v]`);
+  } else if (!state.facecam) {
+    // No facecam: one crop, so no seam between two separately rounded crops
+    lines.push(`[cv]fps=30,${cropFor('A')},scale=${OUT_W}:${OUT_H},setsar=1${tail}[v]`);
   } else {
     const topH = even(slotH('A'));
     lines.push('[cv]fps=30,split[sa][sb]');

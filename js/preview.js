@@ -100,6 +100,7 @@ const activeGuides = { x: null, y: null };
 
 function snapTargetsY() {
   const topH = slotH('A');
+  if (topH >= OUT_H) return [OUT_H / 2]; // No facecam: one section
   return [topH / 2, topH + (OUT_H - topH) / 2];
 }
 

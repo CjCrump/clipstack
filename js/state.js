@@ -23,6 +23,7 @@ export function fitRect(sw, sh, fw, fh) {
 // Which crop box shows source point (x, y): the facecam box first (it's usually
 // the smaller one inside the gameplay), then the gameplay box, else the nearest.
 export function boxAt(x, y) {
+  if (!state.facecam) return 'A'; // one crop shows the whole frame
   let best = 'A';
   let bestD = Infinity;
   for (const k of ['B', 'A']) {
@@ -80,6 +81,10 @@ export const state = {
   split: 0.68, // fraction of the output height used by the top box
   boxA: { x: 542, y: 41, w: 835 }, // top slot (gameplay), source pixels
   boxB: { x: 36, y: 730, w: 562 }, // bottom slot (facecam), source pixels
+  // false = No facecam: boxA alone is one 9:16 crop filling the whole frame.
+  // boxB and split are left alone so switching back brings them back as they were.
+  facecam: true,
+  boxASaved: null, // Top box from before No facecam, put back when switching back
   // Overlay layers drawn over the video, in stacking order. Text: { id, text, ... }.
   // Emoji: { id, kind: 'emoji', file, label, ... }. Both share x, y (centre), size,
   // start, end and anim, so selecting, dragging and the timeline treat them the same.
@@ -105,11 +110,38 @@ export const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
 // ---- crop box geometry ----
 export const box = (k) => (k === 'A' ? state.boxA : state.boxB);
-export const slotH = (k) => (k === 'A' ? OUT_H * state.split : OUT_H * (1 - state.split));
+// In No facecam mode Top's slot is the whole frame and Bottom's is empty.
+export function slotH(k) {
+  if (!state.facecam) return k === 'A' ? OUT_H : 0;
+  return k === 'A' ? OUT_H * state.split : OUT_H * (1 - state.split);
+}
 export const boxH = (k) => (box(k).w * slotH(k)) / OUT_W;
 
+// The biggest 9:16 crop, centred: where No facecam starts from the switch.
+export function fullCrop() {
+  const w = Math.min(state.srcW, (state.srcH * OUT_W) / OUT_H);
+  return { x: (state.srcW - w) / 2, y: (state.srcH - (w * OUT_H) / OUT_W) / 2, w };
+}
+
+// Switch between two boxes (facecam) and one full-frame crop (no facecam).
+// single: where the one crop goes; defaults to the biggest centred crop.
+export function setFacecam(on, single = fullCrop()) {
+  if (on === state.facecam) return;
+  if (on) {
+    if (state.boxASaved) state.boxA = state.boxASaved;
+    state.boxASaved = null;
+    state.facecam = true;
+  } else {
+    state.boxASaved = { ...state.boxA };
+    state.boxA = { ...single };
+    state.facecam = false;
+  }
+  clampBoxes();
+  emit();
+}
+
 export function clampBoxes() {
-  for (const k of ['A', 'B']) {
+  for (const k of state.facecam ? ['A', 'B'] : ['A']) {
     const b = box(k);
     const ratio = slotH(k) / OUT_W;
     const maxW = Math.min(state.srcW, state.srcH / ratio);

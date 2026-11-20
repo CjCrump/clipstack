@@ -28,7 +28,7 @@ let sourceFile = null; // the loaded clip; the MP4 exporter decodes it directly
 const DEFAULT_A = { x: 542, y: 41, w: 835 };
 const DEFAULT_B = { x: 36, y: 730, w: 562 };
 
-initCropBoxes({ stage: $('stage'), overlay: $('overlay'), wrap: $('sourceWrap'), readout: $('splitReadout') });
+initCropBoxes({ stage: $('stage'), overlay: $('overlay'), wrap: $('sourceWrap'), readout: $('splitReadout'), camSwitch: $('camSwitch') });
 initPreview(canvas, video);
 initSourceLayer({ stage: $('stage'), canvas: $('srcLayer'), video, toggle: $('boxesToggle') });
 initTimeline($('timeline'), video, $('tlTopScroll'));
@@ -101,6 +101,8 @@ video.addEventListener('loadedmetadata', () => {
     clips: [{ id: uid(), start: 0, end: video.duration, rate: 1 }],
     selected: null,
     multi: [],
+    facecam: true, // every clip starts with two boxes
+    boxASaved: null,
   });
   state.boxA = { x: DEFAULT_A.x * sx, y: DEFAULT_A.y * sy, w: DEFAULT_A.w * sx };
   state.boxB = { x: DEFAULT_B.x * sx, y: DEFAULT_B.y * sy, w: DEFAULT_B.w * sx };
@@ -108,6 +110,7 @@ video.addEventListener('loadedmetadata', () => {
   $('stage').classList.add('ready');
   $('emptyMsg').hidden = true;
   ['addText', 'addEmoji', 'splitBtn', 'exportFfmpeg', 'playBtn', 'zoomIn', 'zoomOut', 'zoomFit', 'boxesToggle'].forEach((id) => { $(id).disabled = false; });
+  $('camSwitch').querySelectorAll('button').forEach((btn) => { btn.disabled = false; });
   $('exportBrowser').disabled = !canExportInBrowser();
   layout();
   zoomFit();

@@ -29,7 +29,7 @@ export function drawComposite(ctx, drawCrop, t, fmt = 'v') {
     const a = box('A');
     const b = box('B');
     drawCrop(ctx, a.x, a.y, a.w, boxH('A'), 0, 0, OUT_W, topH);
-    drawCrop(ctx, b.x, b.y, b.w, boxH('B'), 0, topH, OUT_W, OUT_H - topH);
+    if (state.facecam) drawCrop(ctx, b.x, b.y, b.w, boxH('B'), 0, topH, OUT_W, OUT_H - topH);
   }
 
   drawLayers(ctx, t, fmt);
