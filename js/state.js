@@ -97,6 +97,7 @@ export const state = {
   multi: [], // ids of other texts/emoji selected with it (Ctrl/Shift + click, Ctrl+A)
   // a text/emoji with item.group set belongs to that group: selecting one selects them all
   exporting: false,
+  dragging: false, // a crop box is being dragged: undo waits for the release
 };
 
 const listeners = new Set();

@@ -3,6 +3,8 @@
 // box re-shapes to fill the rest of the 9:16 frame. Shift + corner scales
 // without changing the split. Moving a box snaps its centre to the video's centre.
 // No facecam mode hides Bottom and turns Top into one 9:16 crop for the whole frame.
+// Dragging Bottom right under Top (or Top onto Bottom) snaps them together, and
+// letting go switches to No facecam. Hold Alt while dragging to skip the snap.
 
 import { state, emit, subscribe, OUT_W, OUT_H, box, boxH, clampBoxes, clamp, setFacecam } from './state.js';
 
@@ -131,22 +133,34 @@ function startDrag(e, k) {
     otherCenterY: box(other).y + boxH(other) / 2,
   };
   el.setPointerCapture(e.pointerId);
+  const before = { ...b }; // where the dragged box goes back to if the drag merges
+  let stacked = false;
+  state.dragging = true;
 
   const move = (ev) => {
     const dx = (ev.clientX - start.px) / scale;
     const dy = (ev.clientY - start.py) / scale;
     applyDrag(k, other, handle, start, dx, dy, ev.shiftKey);
+    // Bottom dragged right under Top (or Top onto Bottom) snaps there; Alt skips it
+    stacked = state.facecam && handle === 'move' && !ev.altKey && snapStack(k);
     clampBoxes();
+    setStackGlow(stacked);
     emit();
   };
   const up = () => {
     guides.x = guides.y = false;
     renderGuides();
+    setStackGlow(false);
     el.removeEventListener('pointermove', move);
     el.removeEventListener('pointerup', up);
+    el.removeEventListener('pointercancel', up);
+    state.dragging = false;
+    if (stacked) mergeStack(k, before); // emits
+    else emit(); // lets undo record the drag
   };
   el.addEventListener('pointermove', move);
   el.addEventListener('pointerup', up);
+  el.addEventListener('pointercancel', up); // never leave undo paused
 }
 
 function applyDrag(k, other, handle, s, dx, dy, shift) {
@@ -213,6 +227,38 @@ function applyDrag(k, other, handle, s, dx, dy, shift) {
 
   // other box keeps its width and centre, height follows the new slot
   box(other).y = s.otherCenterY - boxH(other) / 2;
+}
+
+// If Bottom's top edge is near Top's bottom edge and they overlap side to side,
+// pull the dragged box flush against the other and return true.
+function snapStack(k) {
+  const a = state.boxA;
+  const b = state.boxB;
+  const tol = (SNAP_PX * 2) / scale;
+  const seam = a.y + boxH('A');
+  const overlap = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x);
+  if (overlap <= 0 || Math.abs(b.y - seam) > tol) return false;
+  if (k === 'B') b.y = seam;
+  else a.y = b.y - boxH('A');
+  guides.x = guides.y = false; // the seam glow is the only cue while stacked
+  return true;
+}
+
+function setStackGlow(on) {
+  els.A.classList.toggle('stacked', on);
+  els.B.classList.toggle('stacked', on);
+}
+
+// Released while stacked: switch to No facecam with one crop where Top is (as
+// wide as Top, or as wide as fits). The dragged box goes back to where the drag
+// started, so switching back to Facecam doesn't bring it back stuck under Top.
+function mergeStack(k, before) {
+  const a = state.boxA;
+  const r = OUT_H / OUT_W;
+  const w = Math.min(a.w, state.srcW, state.srcH / r);
+  const crop = { x: a.x + (a.w - w) / 2, y: a.y, w };
+  Object.assign(box(k), before);
+  setFacecam(false, crop);
 }
 
 // Snap a moving box's centre to the source video's centre lines.

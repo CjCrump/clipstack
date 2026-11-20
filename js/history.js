@@ -48,7 +48,8 @@ function restore(json) {
 
 export function initHistory() {
   subscribe(() => {
-    if (restoring || !state.duration || state.exporting) return;
+    // a crop box drag (and a merge at its end) becomes one step when it's let go
+    if (restoring || !state.duration || state.exporting || state.dragging) return;
     clearTimeout(timer);
     timer = setTimeout(commit, SETTLE_MS);
   });

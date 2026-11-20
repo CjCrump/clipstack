@@ -159,6 +159,8 @@ body.dragging .source-wrap { outline: 3px dashed var(--accent); outline-offset: 
 }
 .cropbox.a { --c: var(--box-a); }
 .cropbox.b { --c: var(--box-b); }
+/* Bottom dragged right under Top: both glow, letting go merges them into one crop */
+.cropbox.stacked { border-color: #ff3ec8; box-shadow: 0 0 0 2px #ff3ec8, 0 0 14px #ff3ec8; }
 .cropbox .tag {
   position: absolute;
   top: 0;
